@@ -85,7 +85,7 @@ docker exec massmailer-backend npm run seed
 
 **1. Start PostgreSQL and Redis** (locally or via Docker):
 ```bash
-docker run -d -p 5432:5432 -e POSTGRES_DB=massmailer -e POSTGRES_USER=massmailer -e POSTGRES_PASSWORD=massmailer postgres:16-alpine
+docker run -d -p 5433:5432 -e POSTGRES_DB=massmailer -e POSTGRES_USER=massmailer -e POSTGRES_PASSWORD=massmailer postgres:16-alpine
 docker run -d -p 6379:6379 redis:7-alpine
 ```
 
