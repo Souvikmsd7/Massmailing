@@ -1,0 +1,119 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  campaigns    Campaign[]
+  settings     Settings?
+}
+
+model Campaign {
+  id             String      @id @default(uuid())
+  userId         String
+  user           User        @relation(fields: [userId], references: [id])
+  name           String
+  subject        String
+  body           String      @db.Text
+  status         CampaignStatus @default(DRAFT)
+  recipientCount Int         @default(0)
+  sentCount      Int         @default(0)
+  failedCount    Int         @default(0)
+  pendingCount   Int         @default(0)
+  batchSize      Int         @default(5)
+  batchDelay     Int         @default(10000)
+  maxRetries     Int         @default(3)
+  attachmentPath String?
+  attachmentName String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  recipients     Recipient[]
+  emailLogs      EmailLog[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Recipient {
+  id           String          @id @default(uuid())
+  campaignId   String
+  campaign     Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  name         String?
+  email        String
+  company      String?
+  jobTitle     String?
+  phone        String?
+  linkedin     String?
+  status       RecipientStatus @default(PENDING)
+  sentAt       DateTime?
+  errorMessage String?
+  retryCount   Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  emailLogs    EmailLog[]
+
+  @@index([campaignId])
+  @@index([email])
+  @@index([status])
+}
+
+model EmailLog {
+  id          String   @id @default(uuid())
+  recipientId String
+  recipient   Recipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  status      String
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@index([recipientId])
+  @@index([campaignId])
+}
+
+model Settings {
+  id                       String   @id @default(uuid())
+  userId                   String   @unique
+  user                     User     @relation(fields: [userId], references: [id])
+  senderName               String   @default("")
+  senderEmail              String   @default("")
+  phone                    String   @default("")
+  linkedin                 String   @default("")
+  portfolio                String   @default("")
+  maxRecipientsPerCampaign Int      @default(500)
+  emailBatchSize           Int      @default(5)
+  emailBatchDelay          Int      @default(10000)
+  maxRetries               Int      @default(3)
+  updatedAt                DateTime @updatedAt
+}
+
+enum CampaignStatus {
+  DRAFT
+  SENDING
+  PAUSED
+  COMPLETED
+  STOPPED
+  FAILED
+}
+
+enum RecipientStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
