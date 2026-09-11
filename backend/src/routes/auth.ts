@@ -2,6 +2,7 @@ import { Request, Response, Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { comparePassword, hashPassword } from '../utils/hash';
 import { signToken } from '../utils/jwt';
+import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { z } from 'zod';
 
 const router = Router();
@@ -60,15 +61,11 @@ router.post('/logout', (_req: Request, res: Response): void => {
   res.json({ message: 'Logged out successfully' });
 });
 
-// GET /api/auth/me (protected - used with authMiddleware in server.ts)
-router.get('/me', async (req: Request & { user?: { userId: string } }, res: Response): Promise<void> => {
+// GET /api/auth/me (protected)
+router.get('/me', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    if (!req.user) {
-      res.status(401).json({ error: 'Not authenticated' });
-      return;
-    }
     const user = await prisma.user.findUnique({
-      where: { id: req.user.userId },
+      where: { id: req.user!.userId },
       select: { id: true, email: true, name: true, createdAt: true },
     });
     if (!user) {

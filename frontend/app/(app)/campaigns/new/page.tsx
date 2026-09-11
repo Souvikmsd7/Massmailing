@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import {
   Upload, Users, PenSquare, Eye, CheckCircle2, X, Plus, Trash2,
   FileText, AlertCircle, Info, ChevronLeft, ChevronRight, Send,
-  Variable, Paperclip
+  Variable, Paperclip, Download
 } from 'lucide-react';
 import Papa from 'papaparse';
 
@@ -73,6 +73,23 @@ Best regards,
 
   // ---- Helpers ----
   const currentStepIndex = STEPS.findIndex(s => s.key === step);
+
+  const downloadSampleCsv = () => {
+    const rows = [
+      ['name', 'email', 'company', 'job_title', 'phone', 'linkedin'],
+      ['Rahul Sharma', 'rahul.sharma@techcorp.com', 'TechCorp India', 'Engineering Manager', '+91-9876543210', 'linkedin.com/in/rahulsharma'],
+      ['Priya Mehta', 'priya.mehta@startupxyz.in', 'StartupXYZ', 'HR Manager', '+91-9123456789', 'linkedin.com/in/priyamehta'],
+      ['Amit Verma', 'amit.verma@globalsol.com', 'Global Solutions', 'Technical Recruiter', '+91-9988776655', 'linkedin.com/in/amitverma'],
+    ];
+    const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'massmailer_sample.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const canGoNext = () => {
     if (step === 'recipients') return contacts.length > 0 && campaignName.trim().length > 0;
@@ -335,13 +352,31 @@ Best regards,
                       />
                     </div>
 
-                    <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400">
-                      <Info size={16} className="flex-shrink-0 mt-0.5" />
-                      <div>
-                        <strong>Expected format:</strong> name, email, company, job_title, phone, linkedin
-                        <br />
-                        <code className="text-[10px] opacity-70">Rahul Sharma,rahul@company.com,ABC Tech,Frontend Developer</code>
+                    <div className="flex items-start justify-between gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400">
+                      <div className="flex items-start gap-2">
+                        <Info size={16} className="flex-shrink-0 mt-0.5" />
+                        <div>
+                          <strong>Expected format:</strong> name, email, company, job_title, phone, linkedin
+                          <br />
+                          <code className="text-[10px] opacity-70">Rahul Sharma,rahul@company.com,ABC Tech,Frontend Developer</code>
+                        </div>
                       </div>
+                      <button
+                        onClick={downloadSampleCsv}
+                        className="btn btn-sm flex-shrink-0"
+                        style={{
+                          background: 'rgba(99,102,241,0.15)',
+                          border: '1px solid rgba(99,102,241,0.35)',
+                          color: '#a5b4fc',
+                          fontSize: '0.75rem',
+                          gap: '0.35rem',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title="Download a sample CSV you can fill in"
+                      >
+                        <Download size={13} />
+                        Sample CSV
+                      </button>
                     </div>
                   </>
                 )}

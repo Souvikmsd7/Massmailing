@@ -41,8 +41,12 @@ router.post('/', uploadResume, async (req: AuthRequest, res: Response): Promise<
 
     const { name, subject, body: emailBody, batchSize, batchDelay, maxRetries, recipients } = parsed.data;
 
-    const settings = await prisma.settings.findUnique({ where: { userId } });
+    const [settings, user] = await Promise.all([
+      prisma.settings.findUnique({ where: { userId } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+    ]);
     const maxRecipients = settings?.maxRecipientsPerCampaign || 500;
+    const userName = user?.name || '';
 
     if (recipients.length > maxRecipients) {
       res.status(400).json({ error: `Maximum ${maxRecipients} recipients per campaign` });
@@ -69,6 +73,8 @@ router.post('/', uploadResume, async (req: AuthRequest, res: Response): Promise<
         maxRetries: maxRetries || settings?.maxRetries || 3,
         attachmentPath,
         attachmentName,
+        createdBy: userName,
+        updatedBy: userName,
         recipients: {
           create: recipients.map((r) => ({
             email: r.email,
@@ -159,11 +165,15 @@ router.post('/:id/start', async (req: AuthRequest, res: Response): Promise<void>
     const userId = req.user!.userId;
     const id = req.params.id as string;
 
-    const campaign = await prisma.campaign.findFirst({ where: { id, userId } });
+    const [campaign, user] = await Promise.all([
+      prisma.campaign.findFirst({ where: { id, userId } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+    ]);
     if (!campaign) {
       res.status(404).json({ error: 'Campaign not found' });
       return;
     }
+    const userName = user?.name || '';
 
     if (campaign.status === CampaignStatus.SENDING) {
       res.status(400).json({ error: 'Campaign is already sending' });
@@ -175,7 +185,7 @@ router.post('/:id/start', async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.SENDING } });
+    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.SENDING, updatedBy: userName } });
     await enqueueCampaign(id, campaign.batchSize, campaign.batchDelay);
 
     res.json({ message: 'Campaign started', campaignId: id });
@@ -191,13 +201,16 @@ router.post('/:id/pause', async (req: AuthRequest, res: Response): Promise<void>
     const userId = req.user!.userId;
     const id = req.params.id as string;
 
-    const campaign = await prisma.campaign.findFirst({ where: { id, userId } });
+    const [campaign, user] = await Promise.all([
+      prisma.campaign.findFirst({ where: { id, userId } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+    ]);
     if (!campaign) { res.status(404).json({ error: 'Campaign not found' }); return; }
     if (campaign.status !== CampaignStatus.SENDING) {
       res.status(400).json({ error: 'Campaign is not currently sending' }); return;
     }
-
-    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.PAUSED } });
+    const userName = user?.name || '';
+    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.PAUSED, updatedBy: userName } });
     sseManager.emit(id, { type: 'paused' });
     res.json({ message: 'Campaign paused' });
   } catch (err) {
@@ -212,13 +225,16 @@ router.post('/:id/resume', async (req: AuthRequest, res: Response): Promise<void
     const userId = req.user!.userId;
     const id = req.params.id as string;
 
-    const campaign = await prisma.campaign.findFirst({ where: { id, userId } });
+    const [campaign, user] = await Promise.all([
+      prisma.campaign.findFirst({ where: { id, userId } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+    ]);
     if (!campaign) { res.status(404).json({ error: 'Campaign not found' }); return; }
     if (campaign.status !== CampaignStatus.PAUSED) {
       res.status(400).json({ error: 'Campaign is not paused' }); return;
     }
-
-    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.SENDING } });
+    const userName = user?.name || '';
+    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.SENDING, updatedBy: userName } });
     await enqueueCampaign(id, campaign.batchSize, campaign.batchDelay);
     sseManager.emit(id, { type: 'resumed' });
     res.json({ message: 'Campaign resumed' });
@@ -234,10 +250,14 @@ router.post('/:id/stop', async (req: AuthRequest, res: Response): Promise<void> 
     const userId = req.user!.userId;
     const id = req.params.id as string;
 
-    const campaign = await prisma.campaign.findFirst({ where: { id, userId } });
+    const [campaign, user] = await Promise.all([
+      prisma.campaign.findFirst({ where: { id, userId } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+    ]);
     if (!campaign) { res.status(404).json({ error: 'Campaign not found' }); return; }
+    const userName = user?.name || '';
 
-    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.STOPPED } });
+    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.STOPPED, updatedBy: userName } });
     await drainCampaignJobs(id);
 
     await prisma.recipient.updateMany({
@@ -260,8 +280,12 @@ router.post('/:id/retry', async (req: AuthRequest, res: Response): Promise<void>
     const userId = req.user!.userId;
     const id = req.params.id as string;
 
-    const campaign = await prisma.campaign.findFirst({ where: { id, userId } });
+    const [campaign, user] = await Promise.all([
+      prisma.campaign.findFirst({ where: { id, userId } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+    ]);
     if (!campaign) { res.status(404).json({ error: 'Campaign not found' }); return; }
+    const userName = user?.name || '';
 
     const failedRecipients = await prisma.recipient.findMany({
       where: { campaignId: id, status: RecipientStatus.FAILED, retryCount: { lt: campaign.maxRetries } },
@@ -284,6 +308,7 @@ router.post('/:id/retry', async (req: AuthRequest, res: Response): Promise<void>
         status: CampaignStatus.SENDING,
         failedCount: { decrement: retryCount },
         pendingCount: { increment: retryCount },
+        updatedBy: userName,
       },
     });
 

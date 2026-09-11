@@ -38,6 +38,8 @@ model Campaign {
   maxRetries     Int         @default(3)
   attachmentPath String?
   attachmentName String?
+  createdBy      String      @default("")
+  updatedBy      String      @default("")
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
   recipients     Recipient[]

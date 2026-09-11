@@ -170,6 +170,18 @@ export default function CampaignDetailPage() {
           <div>
             <h1 className="text-xl font-bold">{campaign.name}</h1>
             <p className="text-sm text-[var(--text-secondary)] truncate max-w-lg">{campaign.subject}</p>
+            <div className="flex items-center gap-3 mt-1">
+              {campaign.createdBy && (
+                <span className="text-xs text-[var(--text-muted)]">
+                  Created by <span className="text-[var(--text-secondary)] font-medium">{campaign.createdBy}</span>
+                </span>
+              )}
+              {campaign.updatedBy && campaign.updatedBy !== campaign.createdBy && (
+                <span className="text-xs text-[var(--text-muted)]">
+                  · Updated by <span className="text-[var(--text-secondary)] font-medium">{campaign.updatedBy}</span>
+                </span>
+              )}
+            </div>
           </div>
           <StatusBadge status={campaign.status} />
         </div>

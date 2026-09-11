@@ -16,6 +16,8 @@ export interface Campaign {
   maxRetries: number;
   attachmentPath?: string;
   attachmentName?: string;
+  createdBy: string;
+  updatedBy: string;
   createdAt: string;
   updatedAt: string;
   recipients?: Recipient[];

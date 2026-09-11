@@ -11,7 +11,8 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
       req.cookies?.token ||
       (req.headers.authorization?.startsWith('Bearer ')
         ? req.headers.authorization.slice(7)
-        : null);
+        : null) ||
+      (typeof req.query?.token === 'string' ? req.query.token : null); // SSE fallback (EventSource can't set headers)
 
     if (!token) {
       res.status(401).json({ error: 'Authentication required' });

@@ -1,8 +1,26 @@
-FROM node:20-alpine
+FROM node:20-alpine AS base
+RUN apk add --no-cache openssl
+
+FROM base AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production
+COPY prisma ./prisma/
+RUN npm install
 COPY . .
+RUN npx prisma generate
 RUN npm run build
+
+FROM base AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY package*.json ./
+COPY prisma ./prisma/
+COPY tsconfig.json ./
+RUN npm install --omit=dev && npx prisma generate
+
+COPY --from=builder /app/dist ./dist
+
 EXPOSE 4000
+
 CMD ["node", "dist/server.js"]

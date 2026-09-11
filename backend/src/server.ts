@@ -60,7 +60,6 @@ app.get('/health', (_req, res) => {
 app.use('/api/auth', authLimiter, authRoutes);
 
 // Protected routes
-app.use('/api/auth/me', authMiddleware);
 app.use('/api/campaigns', authMiddleware, campaignRoutes);
 app.use('/api/contacts', authMiddleware, contactRoutes);
 app.use('/api/email', authMiddleware, emailRoutes);

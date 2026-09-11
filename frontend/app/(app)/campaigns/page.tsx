@@ -84,6 +84,7 @@ export default function CampaignsPage() {
               <thead>
                 <tr>
                   <th>Campaign Name</th>
+                  <th>Created By</th>
                   <th>Created</th>
                   <th>Recipients</th>
                   <th>Sent</th>
@@ -113,6 +114,12 @@ export default function CampaignsPage() {
                             </div>
                             <span className="text-[10px] text-[var(--text-muted)]">{progress}%</span>
                           </div>
+                        )}
+                      </td>
+                      <td className="text-sm">
+                        <div className="font-medium text-[var(--text-primary)]">{c.createdBy || '—'}</div>
+                        {c.updatedBy && c.updatedBy !== c.createdBy && (
+                          <div className="text-xs text-[var(--text-muted)] mt-0.5">Updated by {c.updatedBy}</div>
                         )}
                       </td>
                       <td className="text-[var(--text-secondary)] text-sm">
