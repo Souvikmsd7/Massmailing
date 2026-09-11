@@ -12,13 +12,17 @@ import {
   LogOut,
   Mail,
   Zap,
+  BookOpen,
+  BarChart3
 } from 'lucide-react';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/campaigns', label: 'Campaigns', icon: Send },
   { href: '/campaigns/new', label: 'New Campaign', icon: PenSquare },
+  { href: '/templates', label: 'Templates', icon: BookOpen },
   { href: '/hr-contacts', label: 'HR Contacts', icon: Users },
+  { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

@@ -17,6 +17,10 @@ const createCampaignSchema = z.object({
   batchSize: z.number().int().min(1).max(50).optional(),
   batchDelay: z.number().int().min(1000).max(60000).optional(),
   maxRetries: z.number().int().min(0).max(10).optional(),
+  enableFollowUp: z.boolean().optional().default(false),
+  followUpDays: z.number().int().min(1).max(30).optional().default(3),
+  followUpSubject: z.string().optional(),
+  followUpBody: z.string().optional(),
   recipients: z.array(z.object({
     email: z.string().email(),
     name: z.string().optional(),
@@ -39,7 +43,10 @@ router.post('/', uploadResume, async (req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    const { name, subject, body: emailBody, batchSize, batchDelay, maxRetries, recipients } = parsed.data;
+    const {
+      name, subject, body: emailBody, batchSize, batchDelay, maxRetries,
+      enableFollowUp, followUpDays, followUpSubject, followUpBody, recipients
+    } = parsed.data;
 
     const [settings, user] = await Promise.all([
       prisma.settings.findUnique({ where: { userId } }),
@@ -71,6 +78,10 @@ router.post('/', uploadResume, async (req: AuthRequest, res: Response): Promise<
         batchSize: batchSize || settings?.emailBatchSize || 5,
         batchDelay: batchDelay || settings?.emailBatchDelay || 10000,
         maxRetries: maxRetries || settings?.maxRetries || 3,
+        enableFollowUp,
+        followUpDays,
+        followUpSubject,
+        followUpBody,
         attachmentPath,
         attachmentName,
         createdBy: userName,

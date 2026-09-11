@@ -26,6 +26,7 @@ export const emailQueue = new Queue('email-sending', {
 export interface EmailJobData {
   recipientId: string;
   campaignId: string;
+  isFollowUp?: boolean;
 }
 
 let worker: Worker | null = null;
@@ -36,7 +37,7 @@ export function startWorker(): void {
   worker = new Worker<EmailJobData>(
     'email-sending',
     async (job: Job<EmailJobData>) => {
-      const { recipientId, campaignId } = job.data;
+      const { recipientId, campaignId, isFollowUp } = job.data;
 
       // Check if campaign is still active
       const campaign = await prisma.campaign.findUnique({
@@ -44,11 +45,12 @@ export function startWorker(): void {
       });
 
       if (!campaign || campaign.status === CampaignStatus.STOPPED) {
-        // Mark as cancelled
-        await prisma.recipient.update({
-          where: { id: recipientId },
-          data: { status: RecipientStatus.CANCELLED },
-        });
+        if (!isFollowUp) {
+          await prisma.recipient.update({
+            where: { id: recipientId },
+            data: { status: RecipientStatus.CANCELLED },
+          });
+        }
         return;
       }
 
@@ -58,17 +60,27 @@ export function startWorker(): void {
 
       // Load recipient
       const recipient = await prisma.recipient.findUnique({ where: { id: recipientId } });
-      if (!recipient || recipient.status === RecipientStatus.SENT) return;
+      if (!recipient) return;
 
-      // Mark as SENDING
-      await prisma.recipient.update({
-        where: { id: recipientId },
-        data: { status: RecipientStatus.SENDING },
-      });
+      // If this is a follow-up job, check if recipient has already opened/interacted
+      if (isFollowUp) {
+        if (recipient.openCount > 0) {
+          console.log(`[Follow-Up Skipped] Recipient ${recipient.email} already opened original email.`);
+          return;
+        }
+      } else {
+        if (recipient.status === RecipientStatus.SENT) return;
+
+        // Mark as SENDING
+        await prisma.recipient.update({
+          where: { id: recipientId },
+          data: { status: RecipientStatus.SENDING },
+        });
+      }
 
       // Emit SSE event
       sseManager.emit(campaignId, {
-        type: 'sending',
+        type: isFollowUp ? 'sending_followup' : 'sending',
         recipientId,
         email: recipient.email,
       });
@@ -83,8 +95,16 @@ export function startWorker(): void {
         portfolio: settings?.portfolio || '',
       };
 
+      // Select Subject & Body depending on whether this is follow-up
+      const rawSubject = isFollowUp
+        ? (campaign.followUpSubject || `Re: ${campaign.subject}`)
+        : campaign.subject;
+      const rawBody = isFollowUp
+        ? (campaign.followUpBody || campaign.body)
+        : campaign.body;
+
       // Personalize email
-      const { subject, html } = personalizeEmail(campaign.subject, campaign.body, {
+      const { subject, html: rawHtml } = personalizeEmail(rawSubject, rawBody, {
         name: recipient.name || '',
         email: recipient.email,
         company: recipient.company || '',
@@ -93,42 +113,117 @@ export function startWorker(): void {
         linkedin: recipient.linkedin || '',
       }, sender);
 
-      // Build attachments
-      const attachments = [];
-      if (campaign.attachmentPath && campaign.attachmentName) {
+      // Inject open tracking pixel & link click tracking
+      const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const trackedHtml = rawHtml.replace(/<a\s+(?:[^>]*?\s+)?href=["'](https?:\/\/[^"']+)["']/gi, (match, url) => {
+        const trackingUrl = `${apiUrl}/api/track/click/${recipientId}?url=${encodeURIComponent(url)}`;
+        return match.replace(url, trackingUrl);
+      });
+      const trackingPixel = `<img src="${apiUrl}/api/track/open/${recipientId}.png" width="1" height="1" alt="" style="display:none;width:1px;height:1px;" />`;
+      const html = trackedHtml.includes('</body>')
+        ? trackedHtml.replace('</body>', `${trackingPixel}</body>`)
+        : trackedHtml + trackingPixel;
+
+      // Build attachments (only for initial email or if available)
+      const attachments: any[] = [];
+      if (!isFollowUp && campaign.attachmentPath && campaign.attachmentName) {
         attachments.push({
           filename: campaign.attachmentName,
           path: campaign.attachmentPath,
         });
       }
 
+      // Check for custom active SMTP accounts (Multi-SMTP Account Rotation)
+      const activeSmtpAccounts = await prisma.smtpAccount.findMany({
+        where: { userId: campaign.userId, isActive: true },
+      });
+
+      let selectedSmtpAccount = null;
+      if (activeSmtpAccounts.length > 0) {
+        // Round-robin selection based on total recipient index/timestamp
+        const availableAccounts = activeSmtpAccounts.filter(acc => acc.sentToday < acc.dailyLimit);
+        if (availableAccounts.length > 0) {
+          const randomIndex = Math.floor(Math.random() * availableAccounts.length);
+          selectedSmtpAccount = availableAccounts[randomIndex];
+        }
+      }
+
       try {
-        await sendMail({ to: recipient.email, subject, html, attachments });
-
-        await prisma.recipient.update({
-          where: { id: recipientId },
-          data: {
-            status: RecipientStatus.SENT,
-            sentAt: new Date(),
-            errorMessage: null,
-          },
+        await sendMail({
+          to: recipient.email,
+          subject,
+          html,
+          attachments,
+          smtpAccount: selectedSmtpAccount
+            ? {
+                host: selectedSmtpAccount.host,
+                port: selectedSmtpAccount.port,
+                secure: selectedSmtpAccount.secure,
+                username: selectedSmtpAccount.username,
+                password: selectedSmtpAccount.password,
+                fromEmail: selectedSmtpAccount.fromEmail,
+                fromName: selectedSmtpAccount.fromName || sender.senderName,
+              }
+            : undefined,
         });
 
-        await prisma.emailLog.create({
-          data: { recipientId, campaignId, status: 'SENT' },
-        });
+        if (selectedSmtpAccount) {
+          await prisma.smtpAccount.update({
+            where: { id: selectedSmtpAccount.id },
+            data: { sentToday: { increment: 1 } },
+          });
+        }
 
-        await prisma.campaign.update({
-          where: { id: campaignId },
-          data: {
-            sentCount: { increment: 1 },
-            pendingCount: { decrement: 1 },
-          },
-        });
+        if (!isFollowUp) {
+          await prisma.recipient.update({
+            where: { id: recipientId },
+            data: {
+              status: RecipientStatus.SENT,
+              sentAt: new Date(),
+              errorMessage: null,
+            },
+          });
 
-        sseManager.emit(campaignId, { type: 'sent', recipientId, email: recipient.email });
+          await prisma.emailLog.create({
+            data: { recipientId, campaignId, status: 'SENT' },
+          });
+
+          await prisma.campaign.update({
+            where: { id: campaignId },
+            data: {
+              sentCount: { increment: 1 },
+              pendingCount: { decrement: 1 },
+            },
+          });
+
+          // Schedule follow-up job if enabled
+          if (campaign.enableFollowUp && campaign.followUpBody) {
+            const delayMs = (campaign.followUpDays || 3) * 24 * 60 * 60 * 1000;
+            await emailQueue.add(
+              'send-followup',
+              { recipientId, campaignId, isFollowUp: true },
+              { delay: delayMs }
+            );
+            console.log(`[Follow-Up Scheduled] For recipient ${recipient.email} in ${campaign.followUpDays} days`);
+          }
+        } else {
+          await prisma.emailLog.create({
+            data: { recipientId, campaignId, status: 'FOLLOWUP_SENT' },
+          });
+        }
+
+        sseManager.emit(campaignId, { type: isFollowUp ? 'followup_sent' : 'sent', recipientId, email: recipient.email });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+
+        // Health Shield: Deactivate failing SMTP account to protect queue
+        if (selectedSmtpAccount && /auth|login|invalid|connect|eauth/i.test(errorMessage)) {
+          console.warn(`[Health Shield] Auto-deactivating SMTP account "${selectedSmtpAccount.name}" due to error: ${errorMessage}`);
+          await prisma.smtpAccount.update({
+            where: { id: selectedSmtpAccount.id },
+            data: { isActive: false },
+          }).catch(() => {});
+        }
 
         await prisma.recipient.update({
           where: { id: recipientId },

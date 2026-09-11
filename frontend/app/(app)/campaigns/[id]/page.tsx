@@ -9,7 +9,7 @@ import StatusBadge from '@/components/StatusBadge';
 import { showToast } from '@/lib/swal';
 import {
   ArrowLeft, Download, Play, Pause, Square, RefreshCw,
-  Mail, CheckCircle2, XCircle, Clock, Send, Users, Wifi
+  Mail, CheckCircle2, XCircle, Clock, Send, Users, Wifi, Eye, MousePointer
 } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -269,19 +269,31 @@ export default function CampaignDetailPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             {[
               { label: 'Total', value: campaign.recipientCount, color: 'text-violet-400', icon: Users },
               { label: 'Sent', value: campaign.sentCount, color: 'text-emerald-400', icon: CheckCircle2 },
               { label: 'Failed', value: campaign.failedCount, color: 'text-red-400', icon: XCircle },
               { label: 'Pending', value: campaign.pendingCount, color: 'text-amber-400', icon: Clock },
+              {
+                label: `Opened (${campaign.sentCount > 0 ? Math.round(((campaign.openedCount || 0) / campaign.sentCount) * 100) : 0}%)`,
+                value: campaign.openedCount || 0,
+                color: 'text-cyan-400',
+                icon: Eye,
+              },
+              {
+                label: `Clicked (${campaign.sentCount > 0 ? Math.round(((campaign.clickedCount || 0) / campaign.sentCount) * 100) : 0}%)`,
+                value: campaign.clickedCount || 0,
+                color: 'text-indigo-400',
+                icon: Wifi,
+              },
             ].map((s) => {
               const Icon = s.icon;
               return (
                 <div key={s.label} className="text-center p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)]">
                   <Icon size={16} className={`mx-auto mb-1 ${s.color}`} />
                   <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                  <p className="text-xs text-[var(--text-muted)]">{s.label}</p>
+                  <p className="text-[11px] text-[var(--text-muted)] truncate">{s.label}</p>
                 </div>
               );
             })}

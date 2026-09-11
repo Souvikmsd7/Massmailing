@@ -11,9 +11,15 @@ export interface Campaign {
   sentCount: number;
   failedCount: number;
   pendingCount: number;
+  openedCount?: number;
+  clickedCount?: number;
   batchSize: number;
   batchDelay: number;
   maxRetries: number;
+  enableFollowUp?: boolean;
+  followUpDays?: number;
+  followUpSubject?: string;
+  followUpBody?: string;
   attachmentPath?: string;
   attachmentName?: string;
   createdBy: string;
@@ -34,6 +40,10 @@ export interface Recipient {
   linkedin?: string;
   status: RecipientStatus;
   sentAt?: string;
+  openedAt?: string;
+  clickedAt?: string;
+  openCount?: number;
+  clickCount?: number;
   errorMessage?: string;
   retryCount: number;
   createdAt: string;
@@ -58,6 +68,8 @@ export interface DashboardStats {
   totalFailed: number;
   totalPending: number;
   todaySent: number;
+  totalOpened?: number;
+  totalClicked?: number;
   recentCampaigns: Campaign[];
 }
 
@@ -69,4 +81,34 @@ export interface Contact {
   phone?: string;
   linkedin?: string;
   rowIndex?: number;
+}
+
+export interface Template {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SmtpAccount {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  password?: string;
+  fromEmail: string;
+  fromName: string;
+  dailyLimit: number;
+  sentToday: number;
+  isActive: boolean;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt: string;
+  updatedAt: string;
 }

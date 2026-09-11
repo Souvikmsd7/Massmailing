@@ -11,40 +11,48 @@ datasource db {
 }
 
 model User {
-  id           String      @id @default(uuid())
-  email        String      @unique
+  id           String        @id @default(uuid())
+  email        String        @unique
   passwordHash String
   name         String
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   campaigns    Campaign[]
   settings     Settings?
   hrContacts   HRContact[]
+  templates    Template[]
+  smtpAccounts SmtpAccount[]
 }
 
 model Campaign {
-  id             String      @id @default(uuid())
-  userId         String
-  user           User        @relation(fields: [userId], references: [id])
-  name           String
-  subject        String
-  body           String      @db.Text
-  status         CampaignStatus @default(DRAFT)
-  recipientCount Int         @default(0)
-  sentCount      Int         @default(0)
-  failedCount    Int         @default(0)
-  pendingCount   Int         @default(0)
-  batchSize      Int         @default(5)
-  batchDelay     Int         @default(10000)
-  maxRetries     Int         @default(3)
-  attachmentPath String?
-  attachmentName String?
-  createdBy      String      @default("")
-  updatedBy      String      @default("")
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  recipients     Recipient[]
-  emailLogs      EmailLog[]
+  id              String         @id @default(uuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  name            String
+  subject         String
+  body            String         @db.Text
+  status          CampaignStatus @default(DRAFT)
+  recipientCount  Int            @default(0)
+  sentCount       Int            @default(0)
+  failedCount     Int            @default(0)
+  pendingCount    Int            @default(0)
+  openedCount     Int            @default(0)
+  clickedCount    Int            @default(0)
+  batchSize       Int            @default(5)
+  batchDelay      Int            @default(10000)
+  maxRetries      Int            @default(3)
+  enableFollowUp  Boolean        @default(false)
+  followUpDays    Int            @default(3)
+  followUpSubject String?
+  followUpBody    String?        @db.Text
+  attachmentPath  String?
+  attachmentName  String?
+  createdBy       String         @default("")
+  updatedBy       String         @default("")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  recipients      Recipient[]
+  emailLogs       EmailLog[]
 
   @@index([userId])
   @@index([status])
@@ -63,6 +71,10 @@ model Recipient {
   linkedin     String?
   status       RecipientStatus @default(PENDING)
   sentAt       DateTime?
+  openedAt     DateTime?
+  clickedAt    DateTime?
+  openCount    Int             @default(0)
+  clickCount   Int             @default(0)
   errorMessage String?
   retryCount   Int             @default(0)
   createdAt    DateTime        @default(now())
@@ -75,14 +87,14 @@ model Recipient {
 }
 
 model EmailLog {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   recipientId String
   recipient   Recipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   campaignId  String
-  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign    Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   status      String
   error       String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   @@index([recipientId])
   @@index([campaignId])
@@ -138,4 +150,42 @@ model HRContact {
 
   @@index([userId])
   @@index([email])
+}
+
+model Template {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  name      String
+  subject   String
+  body      String   @db.Text
+  createdBy String   @default("")
+  updatedBy String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model SmtpAccount {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  name       String
+  host       String
+  port       Int      @default(587)
+  secure     Boolean  @default(false)
+  username   String
+  password   String
+  fromEmail  String
+  fromName   String   @default("")
+  dailyLimit Int      @default(500)
+  sentToday  Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdBy  String   @default("")
+  updatedBy  String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
 }

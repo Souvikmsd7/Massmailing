@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { Contact } from '@/lib/types';
@@ -8,7 +8,7 @@ import { showToast } from '@/lib/swal';
 import {
   Upload, Users, PenSquare, Eye, CheckCircle2, X, Plus, Trash2,
   FileText, AlertCircle, Info, ChevronLeft, ChevronRight, Send,
-  Variable, Paperclip, Download, UserCheck, Search
+  Variable, Paperclip, Download, UserCheck, Search, Sparkles, Clock
 } from 'lucide-react';
 import Papa from 'papaparse';
 
@@ -68,12 +68,69 @@ Best regards,
   const [attachment, setAttachment] = useState<File | null>(null);
   const [batchSize, setBatchSize] = useState(5);
   const [batchDelay, setBatchDelay] = useState(10);
+  const [enableFollowUp, setEnableFollowUp] = useState(false);
+  const [followUpDays, setFollowUpDays] = useState(3);
+  const [followUpSubject, setFollowUpSubject] = useState('');
+  const [followUpBody, setFollowUpBody] = useState('');
   const resumeRef = useRef<HTMLInputElement>(null);
 
   // Preview state
   const [previewIndex, setPreviewIndex] = useState(0);
   const [previewData, setPreviewData] = useState<{ to: string; subject: string; html: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Saved Templates state
+  const [userTemplates, setUserTemplates] = useState<any[]>([]);
+
+  // AI Pitch Generator state
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [aiRole, setAiRole] = useState('');
+  const [aiCompany, setAiCompany] = useState('');
+  const [aiJobDescription, setAiJobDescription] = useState('');
+  const [aiTone, setAiTone] = useState<'professional' | 'friendly' | 'persuasive' | 'confident'>('professional');
+  const [generatingAI, setGeneratingAI] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('mm_selected_template');
+    if (saved) {
+      try {
+        const tpl = JSON.parse(saved);
+        if (tpl.subject) setSubject(tpl.subject);
+        if (tpl.body) setBody(tpl.body);
+        showToast('info', `Loaded template "${tpl.name}"`);
+      } catch {}
+      localStorage.removeItem('mm_selected_template');
+    }
+
+    api.get('/api/templates').then((res) => {
+      setUserTemplates(res.data.templates || []);
+    }).catch(() => {});
+  }, []);
+
+  const handleGenerateAIPitch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiRole.trim()) {
+      showToast('warning', 'Target Job Role is required');
+      return;
+    }
+    try {
+      setGeneratingAI(true);
+      const res = await api.post('/api/ai/generate-pitch', {
+        role: aiRole,
+        company: aiCompany,
+        jobDescription: aiJobDescription,
+        tone: aiTone,
+      });
+      setSubject(res.data.subject);
+      setBody(res.data.body);
+      showToast('success', res.data.source === 'ai' ? '✨ AI Pitch Generated!' : 'Personalized Pitch Generated!');
+      setShowAIModal(false);
+    } catch {
+      showToast('error', 'Failed to generate AI pitch');
+    } finally {
+      setGeneratingAI(false);
+    }
+  };
 
   // Confirm state
   const [submitting, setSubmitting] = useState(false);
@@ -257,6 +314,10 @@ Best regards,
         body,
         batchSize,
         batchDelay: batchDelay * 1000,
+        enableFollowUp,
+        followUpDays,
+        followUpSubject,
+        followUpBody,
         recipients: contacts,
       };
       formData.append('data', JSON.stringify(data));
@@ -589,10 +650,45 @@ Best regards,
         {/* STEP 2: Compose */}
         {step === 'compose' && (
           <div>
-            <h2 className="font-semibold text-lg mb-4 flex items-center gap-2">
-              <PenSquare size={18} className="text-violet-400" />
-              Compose Email
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <h2 className="font-semibold text-lg flex items-center gap-2">
+                <PenSquare size={18} className="text-violet-400" />
+                Compose Email
+              </h2>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowAIModal(true)}
+                  className="btn btn-secondary text-xs flex items-center gap-1.5 border-violet-500/40 text-violet-300 hover:text-white"
+                >
+                  <Sparkles size={14} className="text-cyan-400" />
+                  AI Personalize Pitch
+                </button>
+
+                {userTemplates.length > 0 && (
+                  <select
+                    className="input text-xs py-1.5 px-2.5 max-w-xs"
+                    defaultValue=""
+                    onChange={(e) => {
+                      const tpl = userTemplates.find((t) => t.id === e.target.value);
+                      if (tpl) {
+                        setSubject(tpl.subject);
+                        setBody(tpl.body);
+                        showToast('success', `Applied template "${tpl.name}"`);
+                      }
+                    }}
+                  >
+                    <option value="" disabled>-- Load Template --</option>
+                    {userTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
 
             <div className="form-group mb-4">
               <label className="label">Subject *</label>
@@ -704,6 +800,63 @@ Best regards,
                   />
                 </div>
               </div>
+            </div>
+
+            {/* Automated Follow-Up Sequence */}
+            <div className="p-4 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] mt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Clock size={18} className="text-violet-400" />
+                  <div>
+                    <h3 className="font-medium text-sm text-slate-200">Automated Follow-Up Sequence</h3>
+                    <p className="text-xs text-[var(--text-muted)]">Automatically send a follow-up email if recipient does not open/reply after X days</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enableFollowUp}
+                    onChange={(e) => setEnableFollowUp(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+                </label>
+              </div>
+
+              {enableFollowUp && (
+                <div className="mt-4 pt-4 border-t border-[var(--border)] space-y-4">
+                  <div className="form-group">
+                    <label className="label">Wait Days Before Sending Follow-Up</label>
+                    <input
+                      type="number"
+                      value={followUpDays}
+                      onChange={(e) => setFollowUpDays(parseInt(e.target.value) || 3)}
+                      min={1} max={30}
+                      className="input w-36"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="label">Follow-Up Subject (Leave blank to use 'Re: ' + original subject)</label>
+                    <input
+                      type="text"
+                      value={followUpSubject}
+                      onChange={(e) => setFollowUpSubject(e.target.value)}
+                      placeholder={`Re: ${subject || 'Original Subject'}`}
+                      className="input"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="label">Follow-Up Body *</label>
+                    <textarea
+                      value={followUpBody}
+                      onChange={(e) => setFollowUpBody(e.target.value)}
+                      className="input font-mono text-sm"
+                      style={{ minHeight: 120 }}
+                      placeholder="Hi {{name}}, just following up on my previous email regarding {{job_title}} at {{company}}..."
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1014,6 +1167,106 @@ Best regards,
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Pitch Personalizer Modal */}
+      {showAIModal && (
+        <div className="modal-overlay">
+          <div className="modal max-w-lg w-full">
+            <div className="flex items-center justify-between pb-4 mb-4 border-b border-[var(--border)]">
+              <h3 className="font-bold text-lg text-slate-100 flex items-center gap-2">
+                <Sparkles size={18} className="text-cyan-400" />
+                AI Personalize Pitch
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAIModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleGenerateAIPitch} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-group">
+                  <label className="label">Target Job Role *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Senior Frontend Engineer"
+                    value={aiRole}
+                    onChange={(e) => setAiRole(e.target.value)}
+                    className="input text-xs"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="label">Target Company Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Google / TechCorp"
+                    value={aiCompany}
+                    onChange={(e) => setAiCompany(e.target.value)}
+                    className="input text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="label">Email Tone</label>
+                <select
+                  value={aiTone}
+                  onChange={(e) => setAiTone(e.target.value as any)}
+                  className="input text-xs"
+                >
+                  <option value="professional">Professional & Formal</option>
+                  <option value="friendly">Friendly & Warm</option>
+                  <option value="persuasive">Persuasive & Impact-Focused</option>
+                  <option value="confident">Confident & Direct</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="label">Job Description / Key Requirements (Optional)</label>
+                <textarea
+                  rows={4}
+                  placeholder="Paste job posting highlights, tech stack requirements (e.g. React, Next.js, Node.js), or key responsibilities..."
+                  value={aiJobDescription}
+                  onChange={(e) => setAiJobDescription(e.target.value)}
+                  className="input text-xs min-h-[90px]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[var(--border)]">
+                <button
+                  type="button"
+                  onClick={() => setShowAIModal(false)}
+                  className="btn btn-ghost text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={generatingAI}
+                  className="btn btn-primary text-xs flex items-center gap-1.5"
+                >
+                  {generatingAI ? (
+                    <>
+                      <div className="spinner border-white border-t-transparent w-3.5 h-3.5" />
+                      Generating Pitch...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={14} className="text-cyan-300" />
+                      Generate Pitch
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

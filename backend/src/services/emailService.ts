@@ -1,11 +1,22 @@
 import nodemailer from 'nodemailer';
 import { Attachment } from 'nodemailer/lib/mailer';
 
+export interface CustomSmtpAccount {
+  host: string;
+  port: number;
+  secure?: boolean;
+  username: string;
+  password: string;
+  fromEmail: string;
+  fromName?: string;
+}
+
 interface SendMailOptions {
   to: string;
   subject: string;
   html: string;
   attachments?: Attachment[];
+  smtpAccount?: CustomSmtpAccount;
 }
 
 let transporter: nodemailer.Transporter | null = null;
@@ -43,10 +54,28 @@ export async function verifySmtp(): Promise<boolean> {
 }
 
 export async function sendMail(options: SendMailOptions): Promise<void> {
-  const fromName = process.env.SMTP_FROM_NAME || process.env.SMTP_USER || '';
-  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || '';
+  let mailTransporter: nodemailer.Transporter;
+  let fromName: string;
+  let fromEmail: string;
 
-  await getTransporter().sendMail({
+  if (options.smtpAccount) {
+    const account = options.smtpAccount;
+    mailTransporter = nodemailer.createTransport({
+      host: account.host,
+      port: account.port || 587,
+      secure: account.secure || account.port === 465,
+      auth: { user: account.username, pass: account.password },
+      tls: { rejectUnauthorized: false },
+    });
+    fromName = account.fromName || process.env.SMTP_FROM_NAME || account.username;
+    fromEmail = account.fromEmail || account.username;
+  } else {
+    mailTransporter = getTransporter();
+    fromName = process.env.SMTP_FROM_NAME || process.env.SMTP_USER || '';
+    fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || '';
+  }
+
+  await mailTransporter.sendMail({
     from: `"${fromName}" <${fromEmail}>`,
     to: options.to,
     subject: options.subject,

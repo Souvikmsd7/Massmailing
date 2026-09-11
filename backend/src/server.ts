@@ -14,6 +14,11 @@ import emailRoutes from './routes/email';
 import dashboardRoutes from './routes/dashboard';
 import settingsRoutes from './routes/settings';
 import hrContactsRoutes from './routes/hr-contacts';
+import trackRoutes from './routes/track';
+import templateRoutes from './routes/templates';
+import aiRoutes from './routes/ai';
+import smtpRoutes from './routes/smtp';
+import analyticsRoutes from './routes/analytics';
 
 // Worker
 import { startWorker } from './workers/emailWorker';
@@ -59,6 +64,7 @@ app.get('/health', (_req, res) => {
 
 // Public routes
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/track', trackRoutes);
 
 // Protected routes
 app.use('/api/campaigns', authMiddleware, campaignRoutes);
@@ -67,6 +73,10 @@ app.use('/api/email', authMiddleware, emailRoutes);
 app.use('/api/dashboard', authMiddleware, dashboardRoutes);
 app.use('/api/settings', authMiddleware, settingsRoutes);
 app.use('/api/hr-contacts', authMiddleware, hrContactsRoutes);
+app.use('/api/templates', authMiddleware, templateRoutes);
+app.use('/api/ai', authMiddleware, aiRoutes);
+app.use('/api/smtp-accounts', authMiddleware, smtpRoutes);
+app.use('/api/analytics', authMiddleware, analyticsRoutes);
 
 // 404 handler
 app.use((_req, res) => {
