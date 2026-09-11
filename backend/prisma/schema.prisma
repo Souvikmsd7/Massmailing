@@ -22,6 +22,21 @@ model User {
   hrContacts   HRContact[]
   templates    Template[]
   smtpAccounts SmtpAccount[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  family    String
+  isRevoked Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([family])
 }
 
 model Campaign {
@@ -57,6 +72,8 @@ model Campaign {
   @@index([userId])
   @@index([status])
   @@index([createdAt])
+  @@index([userId, status])
+  @@index([status, createdAt])
 }
 
 model Recipient {
@@ -84,6 +101,8 @@ model Recipient {
   @@index([campaignId])
   @@index([email])
   @@index([status])
+  @@index([campaignId, status])
+  @@index([status, updatedAt])
 }
 
 model EmailLog {
@@ -98,6 +117,7 @@ model EmailLog {
 
   @@index([recipientId])
   @@index([campaignId])
+  @@index([recipientId, campaignId])
 }
 
 model Settings {
@@ -118,19 +138,28 @@ model Settings {
 
 enum CampaignStatus {
   DRAFT
-  SENDING
+  SCHEDULED
+  PROCESSING
   PAUSED
   COMPLETED
-  STOPPED
+  CANCELLED
   FAILED
 }
 
 enum RecipientStatus {
   PENDING
-  SENDING
+  QUEUED
+  PROCESSING
   SENT
   FAILED
+  BOUNCED
   CANCELLED
+}
+
+enum ProviderStatus {
+  ACTIVE
+  DEGRADED
+  DISABLED
 }
 
 model HRContact {
@@ -168,24 +197,30 @@ model Template {
 }
 
 model SmtpAccount {
-  id         String   @id @default(uuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id])
-  name       String
-  host       String
-  port       Int      @default(587)
-  secure     Boolean  @default(false)
-  username   String
-  password   String
-  fromEmail  String
-  fromName   String   @default("")
-  dailyLimit Int      @default(500)
-  sentToday  Int      @default(0)
-  isActive   Boolean  @default(true)
-  createdBy  String   @default("")
-  updatedBy  String   @default("")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id               String         @id @default(uuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id])
+  name             String
+  host             String
+  port             Int            @default(587)
+  secure           Boolean        @default(false)
+  username         String
+  password         String
+  fromEmail        String
+  fromName         String         @default("")
+  dailyLimit       Int            @default(500)
+  sentToday        Int            @default(0)
+  isActive         Boolean        @default(true)
+  status           ProviderStatus @default(ACTIVE)
+  concurrencyLimit Int            @default(5)
+  failureCount     Int            @default(0)
+  lastFailureAt    DateTime?
+  disabledUntil    DateTime?
+  createdBy        String         @default("")
+  updatedBy        String         @default("")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   @@index([userId])
+  @@index([status])
 }

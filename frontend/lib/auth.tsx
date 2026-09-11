@@ -40,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         localStorage.removeItem('mm_user');
         localStorage.removeItem('mm_token');
+        localStorage.removeItem('mm_refresh_token');
         if (pathname !== '/login') router.push('/login');
       })
       .finally(() => setLoading(false));
@@ -47,10 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const res = await api.post('/api/auth/login', { email, password });
-    const { user: u, token } = res.data;
+    const { user: u, token, refreshToken } = res.data;
     setUser(u);
     localStorage.setItem('mm_user', JSON.stringify(u));
     localStorage.setItem('mm_token', token);
+    if (refreshToken) {
+      localStorage.setItem('mm_refresh_token', refreshToken);
+    }
     router.push('/dashboard');
   };
 
@@ -59,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     localStorage.removeItem('mm_user');
     localStorage.removeItem('mm_token');
+    localStorage.removeItem('mm_refresh_token');
     router.push('/login');
   };
 

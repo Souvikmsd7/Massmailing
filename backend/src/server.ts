@@ -5,6 +5,8 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { authMiddleware } from './middleware/auth';
+import { errorHandler } from './middleware/errorHandler';
+import { logger } from './utils/logger';
 
 // Routes
 import authRoutes from './routes/auth';
@@ -19,6 +21,7 @@ import templateRoutes from './routes/templates';
 import aiRoutes from './routes/ai';
 import smtpRoutes from './routes/smtp';
 import analyticsRoutes from './routes/analytics';
+import healthRoutes from './routes/health';
 
 // Worker
 import { startWorker } from './workers/emailWorker';
@@ -48,8 +51,8 @@ const limiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { error: 'Too many login attempts, please try again later.' },
+  max: 20,
+  message: { error: 'Too many authentication attempts, please try again later.' },
 });
 
 app.use(limiter);
@@ -57,12 +60,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Health check
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Public routes
+// Public routes & Health checks
+app.use('/api/health', healthRoutes);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/track', trackRoutes);
 
@@ -80,19 +79,18 @@ app.use('/api/analytics', authMiddleware, analyticsRoutes);
 
 // 404 handler
 app.use((_req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+  res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Route not found' } });
 });
 
-// Global error handler
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('[Server Error]', err.message);
-  res.status(500).json({ error: 'Internal server error' });
-});
+// Centralized error handler
+app.use(errorHandler);
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`[Server] Running on http://localhost:${PORT}`);
-  startWorker();
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    logger.info(`Server running on http://localhost:${PORT}`);
+    startWorker();
+  });
+}
 
 export default app;

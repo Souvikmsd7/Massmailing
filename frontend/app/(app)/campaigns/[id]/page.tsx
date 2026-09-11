@@ -9,7 +9,7 @@ import StatusBadge from '@/components/StatusBadge';
 import { showToast } from '@/lib/swal';
 import {
   ArrowLeft, Download, Play, Pause, Square, RefreshCw,
-  Mail, CheckCircle2, XCircle, Clock, Send, Users, Wifi, Eye, MousePointer
+  Mail, CheckCircle2, XCircle, Clock, Send, Users, Wifi, Eye
 } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -37,7 +37,6 @@ export default function CampaignDetailPage() {
     }
   }, [id]);
 
-  // Connect to SSE
   useEffect(() => {
     loadCampaign();
 
@@ -67,7 +66,7 @@ export default function CampaignDetailPage() {
       if (data.type === 'sending') {
         setCurrentEmail(data.email);
         setRecipients((prev) =>
-          prev.map((r) => r.id === data.recipientId ? { ...r, status: 'SENDING' } : r)
+          prev.map((r) => r.id === data.recipientId ? { ...r, status: 'PROCESSING' } : r)
         );
       }
 
@@ -103,7 +102,7 @@ export default function CampaignDetailPage() {
       if (data.type === 'completed' || data.type === 'stopped') {
         setCampaign((prev) => prev ? {
           ...prev,
-          status: data.type === 'completed' ? (data.status || 'COMPLETED') : 'STOPPED',
+          status: data.type === 'completed' ? (data.status || 'COMPLETED') : 'CANCELLED',
           sentCount: data.sentCount ?? prev.sentCount,
           failedCount: data.failedCount ?? prev.failedCount,
           pendingCount: 0,
@@ -117,7 +116,7 @@ export default function CampaignDetailPage() {
         setCampaign((prev) => prev ? { ...prev, status: 'PAUSED' } : prev);
       }
       if (data.type === 'resumed') {
-        setCampaign((prev) => prev ? { ...prev, status: 'SENDING' } : prev);
+        setCampaign((prev) => prev ? { ...prev, status: 'PROCESSING' } : prev);
       }
     };
 
@@ -151,9 +150,9 @@ export default function CampaignDetailPage() {
     ? Math.round(((campaign.sentCount + campaign.failedCount) / campaign.recipientCount) * 100)
     : 0;
 
-  const isActive = campaign.status === 'SENDING';
+  const isActive = campaign.status === 'PROCESSING' || campaign.status === 'SENDING';
   const isPaused = campaign.status === 'PAUSED';
-  const isDone = campaign.status === 'COMPLETED' || campaign.status === 'STOPPED' || campaign.status === 'FAILED';
+  const isDone = campaign.status === 'COMPLETED' || campaign.status === 'CANCELLED' || campaign.status === 'STOPPED' || campaign.status === 'FAILED';
 
   const filteredRecipients = filter === 'ALL'
     ? recipients
@@ -204,10 +203,10 @@ export default function CampaignDetailPage() {
             </div>
           )}
 
-          {/* Controls */}
+          {/* Action Controls strictly mapped to state machine */}
           {campaign.status === 'DRAFT' && (
             <button onClick={() => action('start', 'Campaign started!')} disabled={actionLoading} className="btn btn-primary">
-              <Play size={16} /> Start
+              <Play size={16} /> Start Campaign
             </button>
           )}
           {isActive && (
@@ -215,8 +214,8 @@ export default function CampaignDetailPage() {
               <button onClick={() => action('pause', 'Campaign paused')} disabled={actionLoading} className="btn btn-secondary">
                 <Pause size={15} /> Pause
               </button>
-              <button onClick={() => action('stop', 'Campaign stopped')} disabled={actionLoading} className="btn btn-danger">
-                <Square size={15} /> Stop
+              <button onClick={() => action('stop', 'Campaign cancelled')} disabled={actionLoading} className="btn btn-danger">
+                <Square size={15} /> Cancel
               </button>
             </>
           )}
@@ -225,8 +224,8 @@ export default function CampaignDetailPage() {
               <button onClick={() => action('resume', 'Campaign resumed!')} disabled={actionLoading} className="btn btn-primary">
                 <Play size={15} /> Resume
               </button>
-              <button onClick={() => action('stop', 'Campaign stopped')} disabled={actionLoading} className="btn btn-danger">
-                <Square size={15} /> Stop
+              <button onClick={() => action('stop', 'Campaign cancelled')} disabled={actionLoading} className="btn btn-danger">
+                <Square size={15} /> Cancel
               </button>
             </>
           )}
@@ -236,7 +235,7 @@ export default function CampaignDetailPage() {
             </button>
           )}
 
-          {/* Export */}
+          {/* Export CSV */}
           <a href={`${API_URL}/api/campaigns/${id}/export`} className="btn btn-ghost btn-sm">
             <Download size={15} /> Export CSV
           </a>
@@ -251,9 +250,9 @@ export default function CampaignDetailPage() {
               {isActive ? (
                 <span className="flex items-center gap-2">
                   <Send size={16} className="text-cyan-400 animate-pulse" />
-                  Sending...
+                  Processing Batch...
                 </span>
-              ) : isPaused ? 'Paused' : 'Complete'}
+              ) : isPaused ? 'Paused' : 'Campaign Finished'}
             </h3>
             <span className="text-2xl font-bold gradient-text">{progress}%</span>
           </div>
@@ -307,8 +306,8 @@ export default function CampaignDetailPage() {
           <h3 className="font-semibold">Recipients ({recipients.length})</h3>
 
           {/* Filter tabs */}
-          <div className="flex gap-1">
-            {['ALL', 'PENDING', 'SENDING', 'SENT', 'FAILED', 'CANCELLED'].map((f) => {
+          <div className="flex gap-1 flex-wrap">
+            {['ALL', 'PENDING', 'QUEUED', 'PROCESSING', 'SENT', 'FAILED', 'CANCELLED'].map((f) => {
               const count = f === 'ALL' ? recipients.length : recipients.filter(r => r.status === f).length;
               return (
                 <button

@@ -47,6 +47,7 @@ Strict requirements:
               contents: [{ parts: [{ text: prompt }] }],
               generationConfig: { responseMimeType: 'application/json' },
             }),
+            signal: AbortSignal.timeout(8000),
           }
         );
 

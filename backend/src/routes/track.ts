@@ -1,23 +1,34 @@
 import { Request, Response, Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { sseManager } from '../utils/sse';
+import { logger } from '../utils/logger';
 
 const router = Router();
 const prisma = new PrismaClient();
 
-// 1x1 Transparent GIF Buffer
 const TRANSPARENT_GIF = Buffer.from(
   'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
   'base64'
 );
 
-// GET /api/track/open/:recipientId.png (also supports without extension)
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+// GET /api/track/open/:recipientId.png
 const handleOpenTrack = async (req: Request, res: Response): Promise<void> => {
   const rawId = (req.params.recipientId as string) || '';
   const recipientId = rawId.replace(/\.png$/, '');
 
   try {
-    if (recipientId) {
+    if (recipientId && UUID_REGEX.test(recipientId)) {
       const recipient = await prisma.recipient.findUnique({
         where: { id: recipientId },
         select: { id: true, campaignId: true, openedAt: true },
@@ -44,7 +55,6 @@ const handleOpenTrack = async (req: Request, res: Response): Promise<void> => {
             : []),
         ]);
 
-        // Send SSE event
         sseManager.emit(recipient.campaignId, {
           type: 'open',
           recipientId,
@@ -53,7 +63,7 @@ const handleOpenTrack = async (req: Request, res: Response): Promise<void> => {
       }
     }
   } catch (err) {
-    console.error('[Track] Open tracking error:', err);
+    logger.error('[Track] Open tracking error', { recipientId }, err);
   } finally {
     res.setHeader('Content-Type', 'image/gif');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -68,13 +78,16 @@ router.get('/open/:recipientId.png', handleOpenTrack);
 
 // GET /api/track/click/:recipientId?url=...
 router.get('/click/:recipientId', async (req: Request, res: Response): Promise<void> => {
-  const recipientId = req.params.recipientId as string;
-  const targetUrl = (req.query.url as string) || 'https://google.com';
+  const rawId = req.params.recipientId as string;
+  const targetUrl = (req.query.url as string) || '';
+
+  // Validate URL to prevent Open Redirect vulnerabilities
+  const safeRedirectUrl = isValidUrl(targetUrl) ? targetUrl : 'https://google.com';
 
   try {
-    if (recipientId) {
+    if (rawId && UUID_REGEX.test(rawId)) {
       const recipient = await prisma.recipient.findUnique({
-        where: { id: recipientId },
+        where: { id: rawId },
         select: { id: true, campaignId: true, clickedAt: true },
       });
 
@@ -83,7 +96,7 @@ router.get('/click/:recipientId', async (req: Request, res: Response): Promise<v
 
         await prisma.$transaction([
           prisma.recipient.update({
-            where: { id: recipientId },
+            where: { id: rawId },
             data: {
               clickedAt: recipient.clickedAt || new Date(),
               clickCount: { increment: 1 },
@@ -101,9 +114,9 @@ router.get('/click/:recipientId', async (req: Request, res: Response): Promise<v
       }
     }
   } catch (err) {
-    console.error('[Track] Click tracking error:', err);
+    logger.error('[Track] Click tracking error', { recipientId: rawId }, err);
   } finally {
-    res.redirect(302, targetUrl);
+    res.redirect(302, safeRedirectUrl);
   }
 });
 

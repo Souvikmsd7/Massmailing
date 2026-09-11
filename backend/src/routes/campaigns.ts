@@ -5,6 +5,8 @@ import { uploadResume } from '../middleware/upload';
 import { z } from 'zod';
 import { enqueueCampaign, drainCampaignJobs } from '../workers/emailWorker';
 import { sseManager } from '../utils/sse';
+import { CampaignStateMachine } from '../services/campaignState';
+import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
@@ -21,14 +23,18 @@ const createCampaignSchema = z.object({
   followUpDays: z.number().int().min(1).max(30).optional().default(3),
   followUpSubject: z.string().optional(),
   followUpBody: z.string().optional(),
-  recipients: z.array(z.object({
-    email: z.string().email(),
-    name: z.string().optional(),
-    company: z.string().optional(),
-    jobTitle: z.string().optional(),
-    phone: z.string().optional(),
-    linkedin: z.string().optional(),
-  })).min(1),
+  recipients: z
+    .array(
+      z.object({
+        email: z.string().email(),
+        name: z.string().optional(),
+        company: z.string().optional(),
+        jobTitle: z.string().optional(),
+        phone: z.string().optional(),
+        linkedin: z.string().optional(),
+      })
+    )
+    .min(1),
 });
 
 // POST /api/campaigns
@@ -44,8 +50,17 @@ router.post('/', uploadResume, async (req: AuthRequest, res: Response): Promise<
     }
 
     const {
-      name, subject, body: emailBody, batchSize, batchDelay, maxRetries,
-      enableFollowUp, followUpDays, followUpSubject, followUpBody, recipients
+      name,
+      subject,
+      body: emailBody,
+      batchSize,
+      batchDelay,
+      maxRetries,
+      enableFollowUp,
+      followUpDays,
+      followUpSubject,
+      followUpBody,
+      recipients,
     } = parsed.data;
 
     const [settings, user] = await Promise.all([
@@ -99,9 +114,10 @@ router.post('/', uploadResume, async (req: AuthRequest, res: Response): Promise<
       },
     });
 
+    logger.info('Created new campaign', { campaignId: campaign.id, userId });
     res.status(201).json({ campaign });
   } catch (err) {
-    console.error('[Campaigns] Create error:', err);
+    logger.error('[Campaigns] Create error', { userId: req.user?.userId }, err);
     res.status(500).json({ error: 'Failed to create campaign' });
   }
 });
@@ -110,8 +126,8 @@ router.post('/', uploadResume, async (req: AuthRequest, res: Response): Promise<
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
-    const page = parseInt(req.query.page as string || '1', 10);
-    const limit = parseInt(req.query.limit as string || '20', 10);
+    const page = parseInt((req.query.page as string) || '1', 10);
+    const limit = parseInt((req.query.limit as string) || '20', 10);
     const skip = (page - 1) * limit;
 
     const [campaigns, total] = await Promise.all([
@@ -129,6 +145,8 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
           sentCount: true,
           failedCount: true,
           pendingCount: true,
+          openedCount: true,
+          clickedCount: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -138,7 +156,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 
     res.json({ campaigns, total, page, limit });
   } catch (err) {
-    console.error('[Campaigns] List error:', err);
+    logger.error('[Campaigns] List error', { userId: req.user?.userId }, err);
     res.status(500).json({ error: 'Failed to fetch campaigns' });
   }
 });
@@ -165,7 +183,7 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 
     res.json({ campaign });
   } catch (err) {
-    console.error('[Campaigns] Get error:', err);
+    logger.error('[Campaigns] Get error', { userId: req.user?.userId, campaignId: String(req.params.id) }, err);
     res.status(500).json({ error: 'Failed to fetch campaign' });
   }
 });
@@ -184,25 +202,22 @@ router.post('/:id/start', async (req: AuthRequest, res: Response): Promise<void>
       res.status(404).json({ error: 'Campaign not found' });
       return;
     }
+
+    CampaignStateMachine.validateTransition(campaign.status, CampaignStatus.PROCESSING, id);
+
     const userName = user?.name || '';
+    await prisma.campaign.update({
+      where: { id },
+      data: { status: CampaignStatus.PROCESSING, updatedBy: userName },
+    });
 
-    if (campaign.status === CampaignStatus.SENDING) {
-      res.status(400).json({ error: 'Campaign is already sending' });
-      return;
-    }
-
-    if (campaign.status === CampaignStatus.COMPLETED || campaign.status === CampaignStatus.STOPPED) {
-      res.status(400).json({ error: 'Campaign has already completed or been stopped' });
-      return;
-    }
-
-    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.SENDING, updatedBy: userName } });
     await enqueueCampaign(id, campaign.batchSize, campaign.batchDelay);
+    logger.info('Started campaign processing', { campaignId: id, userId });
 
     res.json({ message: 'Campaign started', campaignId: id });
-  } catch (err) {
-    console.error('[Campaigns] Start error:', err);
-    res.status(500).json({ error: 'Failed to start campaign' });
+  } catch (err: any) {
+    logger.error('[Campaigns] Start error', { userId: req.user?.userId, campaignId: String(req.params.id) }, err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to start campaign' });
   }
 });
 
@@ -216,17 +231,25 @@ router.post('/:id/pause', async (req: AuthRequest, res: Response): Promise<void>
       prisma.campaign.findFirst({ where: { id, userId } }),
       prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
     ]);
-    if (!campaign) { res.status(404).json({ error: 'Campaign not found' }); return; }
-    if (campaign.status !== CampaignStatus.SENDING) {
-      res.status(400).json({ error: 'Campaign is not currently sending' }); return;
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
     }
+
+    CampaignStateMachine.validateTransition(campaign.status, CampaignStatus.PAUSED, id);
+
     const userName = user?.name || '';
-    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.PAUSED, updatedBy: userName } });
+    await prisma.campaign.update({
+      where: { id },
+      data: { status: CampaignStatus.PAUSED, updatedBy: userName },
+    });
+
     sseManager.emit(id, { type: 'paused' });
+    logger.info('Paused campaign', { campaignId: id, userId });
     res.json({ message: 'Campaign paused' });
-  } catch (err) {
-    console.error('[Campaigns] Pause error:', err);
-    res.status(500).json({ error: 'Failed to pause campaign' });
+  } catch (err: any) {
+    logger.error('[Campaigns] Pause error', { userId: req.user?.userId, campaignId: String(req.params.id) }, err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to pause campaign' });
   }
 });
 
@@ -240,22 +263,30 @@ router.post('/:id/resume', async (req: AuthRequest, res: Response): Promise<void
       prisma.campaign.findFirst({ where: { id, userId } }),
       prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
     ]);
-    if (!campaign) { res.status(404).json({ error: 'Campaign not found' }); return; }
-    if (campaign.status !== CampaignStatus.PAUSED) {
-      res.status(400).json({ error: 'Campaign is not paused' }); return;
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
     }
+
+    CampaignStateMachine.validateTransition(campaign.status, CampaignStatus.PROCESSING, id);
+
     const userName = user?.name || '';
-    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.SENDING, updatedBy: userName } });
+    await prisma.campaign.update({
+      where: { id },
+      data: { status: CampaignStatus.PROCESSING, updatedBy: userName },
+    });
+
     await enqueueCampaign(id, campaign.batchSize, campaign.batchDelay);
     sseManager.emit(id, { type: 'resumed' });
+    logger.info('Resumed campaign', { campaignId: id, userId });
     res.json({ message: 'Campaign resumed' });
-  } catch (err) {
-    console.error('[Campaigns] Resume error:', err);
-    res.status(500).json({ error: 'Failed to resume campaign' });
+  } catch (err: any) {
+    logger.error('[Campaigns] Resume error', { userId: req.user?.userId, campaignId: String(req.params.id) }, err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to resume campaign' });
   }
 });
 
-// POST /api/campaigns/:id/stop
+// POST /api/campaigns/:id/stop (Cancel)
 router.post('/:id/stop', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -265,23 +296,33 @@ router.post('/:id/stop', async (req: AuthRequest, res: Response): Promise<void> 
       prisma.campaign.findFirst({ where: { id, userId } }),
       prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
     ]);
-    if (!campaign) { res.status(404).json({ error: 'Campaign not found' }); return; }
-    const userName = user?.name || '';
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
 
-    await prisma.campaign.update({ where: { id }, data: { status: CampaignStatus.STOPPED, updatedBy: userName } });
+    CampaignStateMachine.validateTransition(campaign.status, CampaignStatus.CANCELLED, id);
+
+    const userName = user?.name || '';
+    await prisma.campaign.update({
+      where: { id },
+      data: { status: CampaignStatus.CANCELLED, updatedBy: userName },
+    });
+
     await drainCampaignJobs(id);
 
     await prisma.recipient.updateMany({
-      where: { campaignId: id, status: RecipientStatus.PENDING },
+      where: { campaignId: id, status: { in: [RecipientStatus.PENDING, RecipientStatus.QUEUED] } },
       data: { status: RecipientStatus.CANCELLED },
     });
 
     const updated = await prisma.campaign.update({ where: { id }, data: { pendingCount: 0 } });
     sseManager.emit(id, { type: 'stopped', sentCount: updated.sentCount, failedCount: updated.failedCount });
-    res.json({ message: 'Campaign stopped' });
-  } catch (err) {
-    console.error('[Campaigns] Stop error:', err);
-    res.status(500).json({ error: 'Failed to stop campaign' });
+    logger.info('Cancelled campaign', { campaignId: id, userId });
+    res.json({ message: 'Campaign cancelled' });
+  } catch (err: any) {
+    logger.error('[Campaigns] Stop error', { userId: req.user?.userId, campaignId: String(req.params.id) }, err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to stop campaign' });
   }
 });
 
@@ -295,7 +336,11 @@ router.post('/:id/retry', async (req: AuthRequest, res: Response): Promise<void>
       prisma.campaign.findFirst({ where: { id, userId } }),
       prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
     ]);
-    if (!campaign) { res.status(404).json({ error: 'Campaign not found' }); return; }
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
     const userName = user?.name || '';
 
     const failedRecipients = await prisma.recipient.findMany({
@@ -304,7 +349,8 @@ router.post('/:id/retry', async (req: AuthRequest, res: Response): Promise<void>
     });
 
     if (failedRecipients.length === 0) {
-      res.status(400).json({ error: 'No eligible failed recipients to retry' }); return;
+      res.status(400).json({ error: 'No eligible failed recipients to retry' });
+      return;
     }
 
     await prisma.recipient.updateMany({
@@ -316,7 +362,7 @@ router.post('/:id/retry', async (req: AuthRequest, res: Response): Promise<void>
     await prisma.campaign.update({
       where: { id },
       data: {
-        status: CampaignStatus.SENDING,
+        status: CampaignStatus.PROCESSING,
         failedCount: { decrement: retryCount },
         pendingCount: { increment: retryCount },
         updatedBy: userName,
@@ -324,10 +370,11 @@ router.post('/:id/retry', async (req: AuthRequest, res: Response): Promise<void>
     });
 
     await enqueueCampaign(id, campaign.batchSize, campaign.batchDelay);
+    logger.info('Retrying failed campaign recipients', { campaignId: id, count: retryCount });
     res.json({ message: `Retrying ${retryCount} failed emails`, count: retryCount });
-  } catch (err) {
-    console.error('[Campaigns] Retry error:', err);
-    res.status(500).json({ error: 'Failed to retry campaign' });
+  } catch (err: any) {
+    logger.error('[Campaigns] Retry error', { userId: req.user?.userId, campaignId: String(req.params.id) }, err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retry campaign' });
   }
 });
 
@@ -342,14 +389,28 @@ router.get('/:id/export', async (req: AuthRequest, res: Response): Promise<void>
       include: { recipients: { orderBy: { createdAt: 'asc' } } },
     });
 
-    if (!campaign) { res.status(404).json({ error: 'Campaign not found' }); return; }
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
+    // CSV Formula Injection Safeguard: prepend single quote to fields starting with =, +, -, @
+    const sanitizeCsvField = (val: string | null | undefined): string => {
+      if (!val) return '""';
+      let clean = val.replace(/"/g, '""');
+      if (/^[=+\-@]/.test(clean)) {
+        clean = `'${clean}`;
+      }
+      return `"${clean}"`;
+    };
 
     const headers = 'name,email,company,job_title,status,sent_at,error\n';
     const rows = campaign.recipients
       .map((r) => {
         const sentAt = r.sentAt ? r.sentAt.toISOString() : '';
-        const error = r.errorMessage ? `"${r.errorMessage.replace(/"/g, '""')}"` : '';
-        return `"${r.name || ''}","${r.email}","${r.company || ''}","${r.jobTitle || ''}","${r.status}","${sentAt}",${error}`;
+        return `${sanitizeCsvField(r.name)},"${r.email}",${sanitizeCsvField(r.company)},${sanitizeCsvField(
+          r.jobTitle
+        )},"${r.status}","${sentAt}",${sanitizeCsvField(r.errorMessage)}`;
       })
       .join('\n');
 
@@ -357,7 +418,7 @@ router.get('/:id/export', async (req: AuthRequest, res: Response): Promise<void>
     res.setHeader('Content-Disposition', `attachment; filename="${campaign.name}-results.csv"`);
     res.send(headers + rows);
   } catch (err) {
-    console.error('[Campaigns] Export error:', err);
+    logger.error('[Campaigns] Export error', { userId: req.user?.userId, campaignId: String(req.params.id) }, err);
     res.status(500).json({ error: 'Failed to export campaign' });
   }
 });
@@ -376,12 +437,22 @@ router.get('/:id/progress', async (req: AuthRequest, res: Response): Promise<voi
   try {
     const campaign = await prisma.campaign.findUnique({
       where: { id },
-      select: { status: true, sentCount: true, failedCount: true, pendingCount: true, recipientCount: true },
+      select: {
+        status: true,
+        sentCount: true,
+        failedCount: true,
+        pendingCount: true,
+        recipientCount: true,
+        openedCount: true,
+        clickedCount: true,
+      },
     });
     if (campaign) {
       res.write(`data: ${JSON.stringify({ type: 'state', ...campaign })}\n\n`);
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   sseManager.addClient(id, clientId, res);
   req.on('close', () => sseManager.removeClient(id, clientId));

@@ -1,5 +1,5 @@
-export type CampaignStatus = 'DRAFT' | 'SENDING' | 'PAUSED' | 'COMPLETED' | 'STOPPED' | 'FAILED';
-export type RecipientStatus = 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'CANCELLED';
+export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'PROCESSING' | 'SENDING' | 'PAUSED' | 'COMPLETED' | 'CANCELLED' | 'STOPPED' | 'FAILED';
+export type RecipientStatus = 'PENDING' | 'QUEUED' | 'PROCESSING' | 'SENDING' | 'SENT' | 'FAILED' | 'BOUNCED' | 'CANCELLED';
 
 export interface Campaign {
   id: string;
