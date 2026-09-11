@@ -6,7 +6,7 @@ import Link from 'next/link';
 import api from '@/lib/api';
 import { Campaign, Recipient } from '@/lib/types';
 import StatusBadge from '@/components/StatusBadge';
-import { toast } from 'sonner';
+import { showToast } from '@/lib/swal';
 import {
   ArrowLeft, Download, Play, Pause, Square, RefreshCw,
   Mail, CheckCircle2, XCircle, Clock, Send, Users, Wifi
@@ -31,7 +31,7 @@ export default function CampaignDetailPage() {
       setCampaign(res.data.campaign);
       setRecipients(res.data.campaign.recipients || []);
     } catch {
-      toast.error('Failed to load campaign');
+      showToast('error', 'Failed to load campaign');
     } finally {
       setLoading(false);
     }
@@ -110,7 +110,7 @@ export default function CampaignDetailPage() {
         } : prev);
         setCurrentEmail('');
         setLiveConnected(false);
-        if (data.type === 'completed') toast.success('Campaign completed!');
+        if (data.type === 'completed') showToast('success', 'Campaign completed!');
       }
 
       if (data.type === 'paused') {
@@ -130,10 +130,10 @@ export default function CampaignDetailPage() {
     setActionLoading(true);
     try {
       await api.post(`/api/campaigns/${id}/${endpoint}`);
-      toast.success(successMsg);
+      showToast('success', successMsg);
       await loadCampaign();
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Action failed');
+      showToast('error', err?.response?.data?.error || 'Action failed');
     } finally {
       setActionLoading(false);
     }

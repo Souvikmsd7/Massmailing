@@ -36,12 +36,12 @@ function resumeFileFilter(
   file: Express.Multer.File,
   cb: multer.FileFilterCallback
 ) {
-  const allowed = ['.pdf', '.doc', '.docx'];
+  const allowed = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.txt', '.zip', '.rar'];
   const ext = path.extname(file.originalname).toLowerCase();
   if (allowed.includes(ext)) {
     cb(null, true);
   } else {
-    cb(new Error('Only PDF, DOC, and DOCX files are allowed for resume'));
+    cb(new Error('Supported attachments: PDF, DOC, DOCX, PNG, JPG, TXT, ZIP (max 10MB)'));
   }
 }
 

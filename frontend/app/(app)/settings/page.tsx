@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { Settings } from '@/lib/types';
-import { toast } from 'sonner';
+import { showToast } from '@/lib/swal';
 import { Save, User, Mail, Phone, Link2, Globe, Send, RefreshCw } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -24,7 +24,7 @@ export default function SettingsPage() {
   useEffect(() => {
     api.get('/api/settings')
       .then((res) => setSettings(res.data.settings))
-      .catch(() => toast.error('Failed to load settings'))
+      .catch(() => showToast('error', 'Failed to load settings'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -36,9 +36,9 @@ export default function SettingsPage() {
         emailBatchDelay: settings.emailBatchDelay,
       });
       setSettings(res.data.settings);
-      toast.success('Settings saved successfully!');
+      showToast('success', 'Settings saved successfully!');
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Failed to save settings');
+      showToast('error', err?.response?.data?.error || 'Failed to save settings');
     } finally {
       setSaving(false);
     }

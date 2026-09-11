@@ -8,7 +8,7 @@ import StatusBadge from '@/components/StatusBadge';
 import {
   Send, Users, CheckCircle2, XCircle, Clock, TrendingUp, Plus, ArrowRight, Zap
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { showToast } from '@/lib/swal';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -17,7 +17,7 @@ export default function DashboardPage() {
   useEffect(() => {
     api.get('/api/dashboard/stats')
       .then((res) => setStats(res.data))
-      .catch(() => toast.error('Failed to load dashboard stats'))
+      .catch(() => showToast('error', 'Failed to load dashboard stats'))
       .finally(() => setLoading(false));
   }, []);
 

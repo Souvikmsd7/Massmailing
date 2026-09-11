@@ -6,7 +6,7 @@ import api from '@/lib/api';
 import { Campaign } from '@/lib/types';
 import StatusBadge from '@/components/StatusBadge';
 import { Plus, Search, ArrowRight, Send, ChevronLeft, ChevronRight } from 'lucide-react';
-import { toast } from 'sonner';
+import { showToast } from '@/lib/swal';
 
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -23,7 +23,7 @@ export default function CampaignsPage() {
         setCampaigns(res.data.campaigns);
         setTotal(res.data.total);
       })
-      .catch(() => toast.error('Failed to load campaigns'))
+      .catch(() => showToast('error', 'Failed to load campaigns'))
       .finally(() => setLoading(false));
   }, [page]);
 

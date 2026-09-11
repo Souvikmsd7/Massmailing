@@ -13,6 +13,7 @@ import contactRoutes from './routes/contacts';
 import emailRoutes from './routes/email';
 import dashboardRoutes from './routes/dashboard';
 import settingsRoutes from './routes/settings';
+import hrContactsRoutes from './routes/hr-contacts';
 
 // Worker
 import { startWorker } from './workers/emailWorker';
@@ -65,6 +66,7 @@ app.use('/api/contacts', authMiddleware, contactRoutes);
 app.use('/api/email', authMiddleware, emailRoutes);
 app.use('/api/dashboard', authMiddleware, dashboardRoutes);
 app.use('/api/settings', authMiddleware, settingsRoutes);
+app.use('/api/hr-contacts', authMiddleware, hrContactsRoutes);
 
 // 404 handler
 app.use((_req, res) => {

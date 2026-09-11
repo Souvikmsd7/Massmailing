@@ -11,14 +11,15 @@ datasource db {
 }
 
 model User {
-  id           String     @id @default(uuid())
-  email        String     @unique
+  id           String      @id @default(uuid())
+  email        String      @unique
   passwordHash String
   name         String
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
   campaigns    Campaign[]
   settings     Settings?
+  hrContacts   HRContact[]
 }
 
 model Campaign {
@@ -118,4 +119,23 @@ enum RecipientStatus {
   SENT
   FAILED
   CANCELLED
+}
+
+model HRContact {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  name      String
+  company   String   @default("")
+  email     String
+  phone     String   @default("")
+  location  String   @default("")
+  notes     String   @default("") @db.Text
+  createdBy String   @default("")
+  updatedBy String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([email])
 }

@@ -18,6 +18,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/campaigns', label: 'Campaigns', icon: Send },
   { href: '/campaigns/new', label: 'New Campaign', icon: PenSquare },
+  { href: '/hr-contacts', label: 'HR Contacts', icon: Users },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

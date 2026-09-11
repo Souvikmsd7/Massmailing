@@ -4,11 +4,11 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { Contact } from '@/lib/types';
-import { toast } from 'sonner';
+import { showToast } from '@/lib/swal';
 import {
   Upload, Users, PenSquare, Eye, CheckCircle2, X, Plus, Trash2,
   FileText, AlertCircle, Info, ChevronLeft, ChevronRight, Send,
-  Variable, Paperclip, Download
+  Variable, Paperclip, Download, UserCheck, Search
 } from 'lucide-react';
 import Papa from 'papaparse';
 
@@ -41,6 +41,13 @@ export default function NewCampaignPage() {
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvMappingStep, setCsvMappingStep] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // HR Directory Modal state
+  const [showHRModal, setShowHRModal] = useState(false);
+  const [hrContactsList, setHrContactsList] = useState<any[]>([]);
+  const [hrSearch, setHrSearch] = useState('');
+  const [selectedHRIds, setSelectedHRIds] = useState<string[]>([]);
+  const [loadingHR, setLoadingHR] = useState(false);
 
   // Compose state
   const [subject, setSubject] = useState('');
@@ -91,6 +98,16 @@ Best regards,
     URL.revokeObjectURL(url);
   };
 
+  const filteredHRList = hrContactsList.filter((c) => {
+    const query = hrSearch.toLowerCase();
+    return (
+      (c.name || '').toLowerCase().includes(query) ||
+      (c.company || '').toLowerCase().includes(query) ||
+      (c.email || '').toLowerCase().includes(query) ||
+      (c.location || '').toLowerCase().includes(query)
+    );
+  });
+
   const canGoNext = () => {
     if (step === 'recipients') return contacts.length > 0 && campaignName.trim().length > 0;
     if (step === 'compose') return subject.trim().length > 0 && body.trim().length > 0;
@@ -119,9 +136,8 @@ Best regards,
         phone: auto.phone || '',
         linkedin: auto.linkedin || '',
       });
-      setCsvMappingStep(true);
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Failed to upload CSV');
+      showToast('error', err?.response?.data?.error || 'Failed to upload CSV');
     } finally {
       setCsvUploading(false);
     }
@@ -129,7 +145,7 @@ Best regards,
 
   const handleCsvParse = async () => {
     if (!csvMapping.email) {
-      toast.error('Please select the email column');
+      showToast('error', 'Please select the email column');
       return;
     }
     try {
@@ -142,11 +158,58 @@ Best regards,
       setDuplicates(res.data.duplicates || []);
       setCsvMappingStep(false);
       if (res.data.contacts.length > 0) {
-        toast.success(`Imported ${res.data.contacts.length} valid contacts`);
+        showToast('success', `Imported ${res.data.contacts.length} valid contacts`);
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Failed to parse CSV');
+      showToast('error', err?.response?.data?.error || 'Failed to parse CSV');
     }
+  };
+
+  // ---- HR Directory Import Modal ----
+  const openHRModal = async () => {
+    try {
+      setLoadingHR(true);
+      setShowHRModal(true);
+      const res = await api.get('/api/hr-contacts?limit=500');
+      const list = res.data.contacts || [];
+      if (list.length === 0) {
+        showToast('info', 'No saved HR contacts found in directory');
+        setShowHRModal(false);
+        return;
+      }
+      setHrContactsList(list);
+      setSelectedHRIds(list.map((c: any) => c.id));
+    } catch {
+      showToast('error', 'Failed to load HR contacts');
+      setShowHRModal(false);
+    } finally {
+      setLoadingHR(false);
+    }
+  };
+
+  const handleImportFromHRModal = () => {
+    const selected = hrContactsList.filter((c) => selectedHRIds.includes(c.id));
+    if (selected.length === 0) {
+      showToast('warning', 'Please select at least one contact');
+      return;
+    }
+    const newContacts: Contact[] = selected.map((c) => ({
+      name: c.name,
+      company: c.company,
+      email: c.email,
+      phone: c.phone,
+    }));
+
+    setContacts((prev) => {
+      const existingEmails = new Set(prev.map((item) => item.email.toLowerCase()));
+      const filteredNew = newContacts.filter(
+        (item) => !existingEmails.has(item.email.toLowerCase())
+      );
+      return [...prev, ...filteredNew];
+    });
+
+    showToast('success', `Imported ${selected.length} contacts from HR Directory`);
+    setShowHRModal(false);
   };
 
   // ---- Manual Entry ----
@@ -156,11 +219,11 @@ Best regards,
       const contacts: Contact[] = res.data.valid.map((email: string) => ({ email }));
       setContacts(contacts);
       if (res.data.invalid.length > 0) {
-        toast.warning(`${res.data.invalid.length} invalid emails were skipped`);
+        showToast('warning', `${res.data.invalid.length} invalid emails were skipped`);
       }
-      toast.success(`${res.data.validCount} valid recipients added`);
+      showToast('success', `${res.data.validCount} valid recipients added`);
     } catch {
-      toast.error('Failed to validate emails');
+      showToast('error', 'Failed to validate emails');
     }
   };
 
@@ -176,7 +239,7 @@ Best regards,
       });
       setPreviewData(res.data);
     } catch {
-      toast.error('Failed to load preview');
+      showToast('error', 'Failed to load preview');
     } finally {
       setPreviewLoading(false);
     }
@@ -211,10 +274,10 @@ Best regards,
       // Start campaign immediately
       await api.post(`/api/campaigns/${campaignId}/start`);
 
-      toast.success('Campaign created and started!');
+      showToast('success', 'Campaign created and started!');
       router.push(`/campaigns/${campaignId}`);
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Failed to create campaign');
+      showToast('error', err?.response?.data?.error || 'Failed to create campaign');
     } finally {
       setSubmitting(false);
     }
@@ -301,7 +364,7 @@ Best regards,
             </h2>
 
             {/* Mode toggle */}
-            <div className="flex gap-2 mb-6">
+            <div className="flex flex-wrap gap-2 mb-6">
               <button
                 onClick={() => { setInputMode('csv'); setContacts([]); }}
                 className={`btn btn-sm flex-1 justify-center ${inputMode === 'csv' ? 'btn-primary' : 'btn-ghost'}`}
@@ -313,6 +376,13 @@ Best regards,
                 className={`btn btn-sm flex-1 justify-center ${inputMode === 'manual' ? 'btn-primary' : 'btn-ghost'}`}
               >
                 <PenSquare size={14} /> Manual Entry
+              </button>
+              <button
+                onClick={openHRModal}
+                className="btn btn-sm btn-secondary flex-1 justify-center"
+                title="Select saved contacts from HR Contacts Directory"
+              >
+                <UserCheck size={14} /> Import from HR Directory
               </button>
             </div>
 
@@ -567,7 +637,7 @@ Best regards,
 
             {/* Attachment */}
             <div className="form-group mb-4">
-              <label className="label">Resume Attachment</label>
+              <label className="label">Email Attachment (Resume / Cover Letter / Documents)</label>
               <div
                 className="drop-zone"
                 onClick={() => resumeRef.current?.click()}
@@ -575,11 +645,20 @@ Best regards,
               >
                 {attachment ? (
                   <div className="flex items-center gap-3">
-                    <FileText size={20} className="text-violet-400" />
-                    <span className="text-sm">{attachment.name}</span>
+                    <Paperclip size={20} className="text-emerald-400" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-100">{attachment.name}</p>
+                      <p className="text-[10px] text-slate-400">
+                        {(attachment.size / 1024 / 1024) >= 1
+                          ? `${(attachment.size / 1024 / 1024).toFixed(2)} MB`
+                          : `${(attachment.size / 1024).toFixed(1)} KB`}
+                      </p>
+                    </div>
                     <button
+                      type="button"
                       onClick={(e) => { e.stopPropagation(); setAttachment(null); }}
-                      className="ml-auto text-[var(--text-muted)] hover:text-red-400"
+                      className="ml-auto p-1 text-slate-400 hover:text-red-400 rounded transition"
+                      title="Remove attachment"
                     >
                       <X size={16} />
                     </button>
@@ -587,13 +666,13 @@ Best regards,
                 ) : (
                   <div className="flex items-center gap-3 text-[var(--text-secondary)]">
                     <Paperclip size={20} className="text-violet-400" />
-                    <span className="text-sm">Click to attach resume (PDF, DOC, DOCX · max 10MB)</span>
+                    <span className="text-sm">Attach file (PDF, DOC, DOCX, PNG, JPG, ZIP · max 10MB)</span>
                   </div>
                 )}
                 <input
                   ref={resumeRef}
                   type="file"
-                  accept=".pdf,.doc,.docx"
+                  accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.zip,.rar"
                   className="hidden"
                   onChange={(e) => e.target.files?.[0] && setAttachment(e.target.files[0])}
                 />
@@ -795,6 +874,149 @@ Best regards,
           </button>
         )}
       </div>
+      {showHRModal && (
+        <div className="modal-overlay">
+          <div className="modal max-w-2xl w-full max-h-[85vh] flex flex-col p-6">
+            <div className="flex items-center justify-between pb-4 mb-4 border-b border-[var(--border)]">
+              <div>
+                <h3 className="font-bold text-lg text-slate-100 flex items-center gap-2">
+                  <UserCheck size={18} className="text-violet-400" />
+                  Import from HR Directory
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  Select recruiters from your saved HR Directory to add as campaign recipients.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHRModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Search & Selection Counter */}
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                <input
+                  type="text"
+                  placeholder="Search by name, company, email, location..."
+                  value={hrSearch}
+                  onChange={(e) => setHrSearch(e.target.value)}
+                  className="input pl-8 text-xs py-1.5"
+                />
+              </div>
+              <span className="text-xs text-[var(--text-muted)]">
+                Selected: <strong className="text-violet-400">{selectedHRIds.length}</strong> / {filteredHRList.length}
+              </span>
+            </div>
+
+            {/* HR Contacts List Table */}
+            <div className="flex-1 overflow-y-auto border border-[var(--border)] rounded-xl mb-4 max-h-[350px]">
+              {loadingHR ? (
+                <div className="p-8 text-center text-xs text-[var(--text-muted)] flex flex-col items-center gap-2">
+                  <div className="spinner" />
+                  Loading HR contacts...
+                </div>
+              ) : filteredHRList.length === 0 ? (
+                <div className="p-8 text-center text-xs text-[var(--text-muted)]">
+                  {hrSearch ? `No contacts match "${hrSearch}"` : 'No saved HR contacts in directory.'}
+                </div>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-[var(--bg-secondary)] border-b border-[var(--border)]">
+                    <tr>
+                      <th className="w-10 p-2.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedHRIds.length === filteredHRList.length && filteredHRList.length > 0}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedHRIds(filteredHRList.map((c) => c.id));
+                            } else {
+                              setSelectedHRIds([]);
+                            }
+                          }}
+                          className="rounded accent-violet-500 cursor-pointer"
+                        />
+                      </th>
+                      <th className="p-2.5 text-left">Name</th>
+                      <th className="p-2.5 text-left">Company</th>
+                      <th className="p-2.5 text-left">Email</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredHRList.map((c) => {
+                      const isSelected = selectedHRIds.includes(c.id);
+                      return (
+                        <tr
+                          key={c.id}
+                          onClick={() => {
+                            setSelectedHRIds((prev) =>
+                              prev.includes(c.id) ? prev.filter((id) => id !== c.id) : [...prev, c.id]
+                            );
+                          }}
+                          className={`cursor-pointer hover:bg-violet-950/20 ${isSelected ? 'bg-violet-950/30' : ''}`}
+                        >
+                          <td className="p-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                setSelectedHRIds((prev) =>
+                                  prev.includes(c.id) ? prev.filter((id) => id !== c.id) : [...prev, c.id]
+                                );
+                              }}
+                              className="rounded accent-violet-500 cursor-pointer"
+                            />
+                          </td>
+                          <td className="p-2.5 font-medium text-slate-100">{c.name}</td>
+                          <td className="p-2.5 text-slate-300">{c.company || '—'}</td>
+                          <td className="p-2.5 text-violet-300">{c.email}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Footer buttons */}
+            <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]">
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedHRIds.length === filteredHRList.length) setSelectedHRIds([]);
+                  else setSelectedHRIds(filteredHRList.map((c) => c.id));
+                }}
+                className="btn btn-ghost text-xs"
+              >
+                {selectedHRIds.length === filteredHRList.length ? 'Deselect All' : 'Select All'}
+              </button>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowHRModal(false)}
+                  className="btn btn-ghost text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleImportFromHRModal}
+                  disabled={selectedHRIds.length === 0}
+                  className="btn btn-primary text-xs"
+                >
+                  Import Selected ({selectedHRIds.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
