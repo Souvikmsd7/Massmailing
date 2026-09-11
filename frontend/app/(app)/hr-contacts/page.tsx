@@ -261,7 +261,7 @@ export default function HRContactsPage() {
   };
 
   return (
-    <div className="main-content">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>

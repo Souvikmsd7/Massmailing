@@ -189,9 +189,12 @@ export default function SettingsPage() {
   return (
     <div className="max-w-4xl space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-[var(--text-secondary)] text-sm mt-1">
-          Configure sender profiles, Multi-SMTP Account rotation, and sending limits
+        <h1 className="text-2xl font-bold font-outfit text-white flex items-center gap-2">
+          <Server className="text-violet-400" size={24} />
+          System Settings & SMTP Rotation
+        </h1>
+        <p className="text-slate-400 text-sm mt-1">
+          Configure sender profiles, Multi-SMTP Account rotation, and sending safety limits
         </p>
       </div>
 

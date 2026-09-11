@@ -50,14 +50,14 @@ export default function NewCampaignPage() {
   const [loadingHR, setLoadingHR] = useState(false);
 
   // Compose state
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState(`Hi {{name}},
+  const [subject, setSubject] = useState('Application for {{job_title|Software Engineer}} Role – {{sender_name}}');
+  const [body, setBody] = useState(`Hi {{name|there}},
 
-I hope you are doing well.
+I hope you are having a productive week.
 
-I am writing to express my interest in the {{job_title}} position at {{company}}.
+I am writing to express my interest in the {{job_title|Software Engineer}} position at {{company|your team}}.
 
-I have strong experience in software development and would love to contribute to your team.
+I have strong experience in software development and would love to contribute to your engineering team.
 
 I have attached my resume for your consideration.
 

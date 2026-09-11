@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import { Zap, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Zap, Mail, Lock, Eye, EyeOff, AlertCircle, ShieldCheck } from 'lucide-react';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -19,45 +19,43 @@ export default function LoginPage() {
     try {
       await login(email, password);
     } catch (err: any) {
-      setError(err?.response?.data?.error || 'Login failed. Please try again.');
+      setError(err?.response?.data?.error || 'Login failed. Please verify your credentials.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{
-      background: 'radial-gradient(ellipse at 50% 0%, rgba(139, 92, 246, 0.15) 0%, transparent 70%), var(--bg-primary)'
-    }}>
-      {/* Decorative orbs */}
-      <div className="fixed top-20 left-20 w-72 h-72 rounded-full opacity-10 blur-3xl pointer-events-none"
-        style={{ background: 'radial-gradient(circle, #8b5cf6, transparent)' }} />
-      <div className="fixed bottom-20 right-20 w-72 h-72 rounded-full opacity-10 blur-3xl pointer-events-none"
-        style={{ background: 'radial-gradient(circle, #06b6d4, transparent)' }} />
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#07070c]">
+      {/* Dynamic Ambient Background Orbs */}
+      <div className="fixed top-1/4 left-1/3 w-96 h-96 rounded-full bg-violet-600/15 blur-[120px] pointer-events-none" />
+      <div className="fixed bottom-1/4 right-1/3 w-96 h-96 rounded-full bg-cyan-500/15 blur-[120px] pointer-events-none" />
+      <div className="fixed inset-0 bg-[radial-gradient(#8b5cf6_1px,transparent_1px)] [background-size:32px_32px] opacity-15 pointer-events-none" />
 
-      <div className="w-full max-w-md">
-        {/* Logo */}
+      <div className="w-full max-w-md relative z-10">
+        {/* Brand Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-500 mb-4 shadow-lg"
-            style={{ boxShadow: '0 0 40px rgba(139, 92, 246, 0.4)' }}>
-            <Zap size={32} className="text-white" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 via-indigo-600 to-cyan-400 p-[1.5px] shadow-2xl shadow-violet-500/30 mb-4">
+            <div className="w-full h-full bg-[#0a0a0f] rounded-[14px] flex items-center justify-center">
+              <Zap size={32} className="text-violet-400 fill-violet-400/20" />
+            </div>
           </div>
-          <h1 className="text-3xl font-bold mb-1">
+          <h1 className="text-3xl font-extrabold mb-1 font-outfit tracking-tight">
             <span className="gradient-text">MassMailer</span>
           </h1>
-          <p className="text-[var(--text-secondary)] text-sm">
-            Recruiter Outreach Platform
+          <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">
+            Recruiter Outreach & Intelligence
           </p>
         </div>
 
-        {/* Card */}
-        <div className="card" style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
-          <h2 className="text-xl font-semibold mb-1">Welcome back</h2>
-          <p className="text-[var(--text-secondary)] text-sm mb-6">Sign in to your account</p>
+        {/* Glass Card */}
+        <div className="card p-8 shadow-2xl shadow-violet-950/40 border-violet-500/25 bg-slate-950/80 backdrop-blur-2xl">
+          <h2 className="text-xl font-bold text-slate-100 mb-1 font-outfit">Welcome back</h2>
+          <p className="text-slate-400 text-xs mb-6">Enter your authorized credentials to access the platform</p>
 
           {error && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm mb-4">
-              <AlertCircle size={16} className="flex-shrink-0" />
+            <div className="flex items-center gap-2 p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs mb-5 animate-fadeIn">
+              <AlertCircle size={16} className="flex-shrink-0 text-red-400" />
               {error}
             </div>
           )}
@@ -66,16 +64,16 @@ export default function LoginPage() {
             <div className="form-group">
               <label className="label">Email Address</label>
               <div className="relative">
-                <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input
                   id="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@example.com"
+                  placeholder="admin@massmailer.local"
                   required
                   autoComplete="email"
-                  className="input pl-9"
+                  className="input pl-10 text-sm"
                 />
               </div>
             </div>
@@ -83,7 +81,7 @@ export default function LoginPage() {
             <div className="form-group">
               <label className="label">Password</label>
               <div className="relative">
-                <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input
                   id="password"
                   type={showPass ? 'text' : 'password'}
@@ -92,12 +90,12 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   required
                   autoComplete="current-password"
-                  className="input pl-9 pr-10"
+                  className="input pl-10 pr-10 text-sm"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 transition"
                 >
                   {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -107,12 +105,12 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="btn btn-primary btn-lg w-full justify-center mt-2"
+              className="btn btn-primary btn-lg w-full justify-center mt-2 shadow-lg shadow-violet-500/25"
             >
               {loading ? (
                 <>
-                  <span className="spinner" style={{ width: 16, height: 16 }} />
-                  Signing in...
+                  <span className="spinner border-white border-t-transparent" style={{ width: 16, height: 16 }} />
+                  Authenticating...
                 </>
               ) : (
                 'Sign In'
@@ -120,14 +118,17 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-xs text-[var(--text-muted)] mt-4">
-            Default: <code className="text-violet-400">admin@massmailer.local</code> /  <code className="text-violet-400">Admin@1234</code>
-          </p>
+          <div className="mt-6 pt-4 border-t border-slate-800/80 text-center">
+            <p className="text-[11px] text-slate-400">
+              Default Credentials: <code className="text-violet-400 font-mono">admin@massmailer.local</code> / <code className="text-violet-400 font-mono">Admin@1234</code>
+            </p>
+          </div>
         </div>
 
-        <p className="text-center text-xs text-[var(--text-muted)] mt-4">
-          🔒 Private access only — not publicly accessible
-        </p>
+        <div className="flex items-center justify-center gap-1.5 text-center text-xs text-slate-500 mt-6">
+          <ShieldCheck size={14} className="text-emerald-400" />
+          <span>Encrypted JWT session & isolated outreach queue</span>
+        </div>
       </div>
     </div>
   );
