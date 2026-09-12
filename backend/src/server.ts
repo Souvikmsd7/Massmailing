@@ -23,6 +23,11 @@ import smtpRoutes from './routes/smtp';
 import analyticsRoutes from './routes/analytics';
 import healthRoutes from './routes/health';
 
+// Career Intelligence routes
+import careerCandidateRoutes from './routes/career/candidate';
+import careerResumeRoutes from './routes/career/resume';
+import careerSkillsRoutes from './routes/career/skills';
+
 // Worker
 import { startWorker } from './workers/emailWorker';
 
@@ -76,6 +81,11 @@ app.use('/api/templates', authMiddleware, templateRoutes);
 app.use('/api/ai', authMiddleware, aiRoutes);
 app.use('/api/smtp-accounts', authMiddleware, smtpRoutes);
 app.use('/api/analytics', authMiddleware, analyticsRoutes);
+
+// Career Intelligence
+app.use('/api/career', authMiddleware, careerCandidateRoutes);
+app.use('/api/career/resumes', authMiddleware, careerResumeRoutes);
+app.use('/api/career/skills', authMiddleware, careerSkillsRoutes);
 
 // 404 handler
 app.use((_req, res) => {

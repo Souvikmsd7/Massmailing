@@ -112,3 +112,93 @@ export interface SmtpAccount {
   createdAt: string;
   updatedAt: string;
 }
+
+// ─── Career Intelligence Types ────────────────────────────────────────────────
+
+export type ResumeStatus = 'UPLOADED' | 'PROCESSING' | 'PARSED' | 'FAILED';
+export type SkillSource = 'RESUME' | 'MANUAL' | 'AI';
+export type SkillProficiency = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT';
+
+export interface CandidateProfile {
+  id: string;
+  userId: string;
+  headline?: string | null;
+  summary?: string | null;
+  location?: string | null;
+  preferredLocations: string[];
+  remotePreference?: string | null;
+  preferredRoles: string[];
+  salaryMin?: number | null;
+  salaryMax?: number | null;
+  noticePeriod?: string | null;
+  workAuthorization?: string | null;
+  yearsOfExperience?: number | null;
+  createdAt: string;
+  updatedAt: string;
+  skills?: CandidateSkill[];
+  resumes?: ResumeListItem[];
+}
+
+export interface ResumeListItem {
+  id: string;
+  fileName: string;
+  fileType: string;
+  status: ResumeStatus;
+  isOriginal: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Resume extends ResumeListItem {
+  rawText?: string | null;
+  parsedData?: ParsedResume | null;
+}
+
+export interface ParsedResume {
+  headline?: string | null;
+  summary?: string | null;
+  location?: string | null;
+  yearsOfExperience?: number | null;
+  skills: string[];
+  experience: {
+    company?: string | null;
+    role?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    description?: string | null;
+    technologies: string[];
+  }[];
+  education: {
+    institution?: string | null;
+    degree?: string | null;
+    field?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+  }[];
+  projects: {
+    name?: string | null;
+    description?: string | null;
+    technologies: string[];
+    url?: string | null;
+  }[];
+  certifications: string[];
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  normalizedName: string;
+  category?: string | null;
+  createdAt: string;
+}
+
+export interface CandidateSkill {
+  candidateId: string;
+  skillId: string;
+  proficiency?: SkillProficiency | null;
+  years?: number | null;
+  source: SkillSource;
+  createdAt: string;
+  updatedAt: string;
+  skill: Skill;
+}

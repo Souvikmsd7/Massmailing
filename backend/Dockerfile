@@ -23,4 +23,5 @@ COPY --from=builder /app/dist ./dist
 
 EXPOSE 4000
 
-CMD ["node", "dist/server.js"]
+# Push schema changes, seed default user, then start server
+CMD ["sh", "-c", "npx prisma db push --skip-generate && npx prisma db seed && node dist/server.js"]

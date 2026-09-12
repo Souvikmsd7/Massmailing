@@ -13,7 +13,10 @@ import {
   Zap,
   BookOpen,
   BarChart3,
-  Sparkles
+  Sparkles,
+  BrainCircuit,
+  FileText,
+  Star
 } from 'lucide-react';
 
 const navItems = [
@@ -24,6 +27,13 @@ const navItems = [
   { href: '/hr-contacts', label: 'HR Directory', icon: Users },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/settings', label: 'Settings', icon: Settings },
+];
+
+const careerNavItems = [
+  { href: '/career', label: 'Career Hub', icon: BrainCircuit },
+  { href: '/career/resume', label: 'Resume', icon: FileText },
+  { href: '/career/profile', label: 'Profile', icon: Star },
+  { href: '/career/skills', label: 'Skills', icon: Sparkles },
 ];
 
 export default function Sidebar() {
@@ -63,6 +73,27 @@ export default function Sidebar() {
               className={`sidebar-item group ${active ? 'active' : ''}`}
             >
               <Icon size={17} className={`transition-transform duration-200 group-hover:scale-110 ${active ? 'text-violet-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+
+        {/* Career Intelligence Section */}
+        <div className="mt-3 mb-1">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-3 pt-2 pb-1 flex items-center gap-1.5">
+            <BrainCircuit size={10} className="text-indigo-400" /> Career Intelligence
+          </p>
+        </div>
+        {careerNavItems.map((item) => {
+          const active = pathname === item.href || (item.href !== '/career' && pathname.startsWith(item.href));
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`sidebar-item group ${active ? 'active' : ''}`}
+            >
+              <Icon size={17} className={`transition-transform duration-200 group-hover:scale-110 ${active ? 'text-indigo-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
               <span>{item.label}</span>
             </Link>
           );

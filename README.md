@@ -160,3 +160,44 @@ GEMINI_API_KEY="your-google-gemini-api-key"
 ```env
 NEXT_PUBLIC_API_URL="http://localhost:4000"
 ```
+
+---
+
+## 🧠 Career Intelligence
+
+MassMailer now includes the foundation for an AI-powered Career Intelligence system.
+
+**Phase 1 supports:**
+
+- Candidate profile (headline, summary, location, salary preferences, notice period, work authorization)
+- Resume upload (PDF only, 10MB max, MIME-type validated)
+- Resume text extraction (via `pdf-parse`)
+- AI resume parsing (Google Gemini, output validated with Zod)
+- Skill normalization (ReactJS → React, NodeJS → Node.js, etc.)
+- Candidate skills storage (RESUME / MANUAL / AI source tracking)
+- Resume version foundation (original preserved, future optimization supported)
+
+**Frontend pages:**
+- `/career` — Career Intelligence dashboard
+- `/career/resume` — Upload, parse, and manage resumes
+- `/career/profile` — Edit candidate profile (pre-populated by AI)
+- `/career/skills` — View, add, and remove normalized skills
+
+**Architecture:**
+```text
+Resume Upload
+      ↓
+Text Extraction (pdf-parse)
+      ↓
+Gemini AI (resumeParser)
+      ↓
+Zod Validation (ParsedResumeSchema)
+      ↓
+Skill Normalization + CandidateSkill upsert
+      ↓
+CandidateProfile update
+      ↓
+PostgreSQL
+```
+
+> Note: Job scraping, auto-apply, job matching, RAG, and cover-letter generation are not implemented in Phase 1.

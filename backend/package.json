@@ -17,6 +17,7 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "@types/cookie-parser": "^1.4.10",
+    "@types/pdf-parse": "^1.1.5",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.13.0",
     "cookie-parser": "^1.4.7",
@@ -30,10 +31,11 @@
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.15",
     "papaparse": "^5.4.1",
-    "uuid": "^10.0.0",
-    "zod": "^3.23.8",
+    "pdf-parse": "^2.4.5",
     "ts-node": "^10.9.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.8"
   },
   "prisma": {
     "seed": "npx ts-node --project tsconfig.json --transpile-only prisma/seed.ts"
