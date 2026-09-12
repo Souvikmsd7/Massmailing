@@ -4,7 +4,7 @@ import { uploadPdf } from '../../middleware/upload';
 import {
   uploadResume,
   listResumes,
-  getResume,
+  getResumePublic,
   deleteResume,
   parseResume,
 } from '../../services/career/resumeService';
@@ -51,7 +51,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 // GET /api/career/resumes/:id
 router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const resume = await getResume(String(req.params.id), req.user!.userId);
+    const resume = await getResumePublic(String(req.params.id), req.user!.userId);
     res.json({ success: true, data: resume });
   } catch (err) {
     if (err instanceof AppError) {

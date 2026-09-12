@@ -78,7 +78,8 @@ export async function uploadResume(
   });
 
   logger.info('[ResumeService] Resume uploaded', { resumeId: resume.id, candidateId });
-  return resume;
+  const { storageKey: _sk, rawText: _rt, ...publicResume } = resume;
+  return publicResume;
 }
 
 /**
@@ -107,22 +108,37 @@ export async function listResumes(userId: string) {
 }
 
 /**
- * Get a single resume — enforces ownership.
+ * Internal helper to fetch a resume and enforce candidate profile ownership.
+ * Throws NotFoundError if resume does not exist, or ForbiddenError if owned by another user.
  */
 export async function getResume(resumeId: string, userId: string) {
   const profile = await prisma.candidateProfile.findUnique({
     where: { userId },
     select: { id: true },
   });
-  if (!profile) throw new NotFoundError('Candidate profile not found');
+  if (!profile) {
+    throw new NotFoundError('Candidate profile not found', 'PROFILE_NOT_FOUND');
+  }
 
   const resume = await prisma.resume.findUnique({
     where: { id: resumeId },
   });
-  if (!resume) throw new NotFoundError('Resume not found');
-  if (resume.candidateId !== profile.id) throw new ForbiddenError('Access denied');
-
+  if (!resume) {
+    throw new NotFoundError('Resume not found', 'RESUME_NOT_FOUND');
+  }
+  if (resume.candidateId !== profile.id) {
+    throw new ForbiddenError('Access denied', 'FORBIDDEN');
+  }
   return resume;
+}
+
+/**
+ * Get a single resume for API response — strips private fields (storageKey, rawText).
+ */
+export async function getResumePublic(resumeId: string, userId: string) {
+  const resume = await getResume(resumeId, userId);
+  const { storageKey, rawText, ...publicResume } = resume;
+  return publicResume;
 }
 
 /**
@@ -143,9 +159,7 @@ export async function deleteResume(resumeId: string, userId: string) {
  * 1. Extract text from PDF
  * 2. Send to Gemini
  * 3. Validate with Zod
- * 4. Save parsedData + rawText
- * 5. Upsert skills
- * 6. Update candidate profile (headline, summary, location, yearsOfExperience)
+ * 4. Save parsedData + rawText, upsert skills, and update profile inside a Prisma transaction
  */
 export async function parseResume(resumeId: string, userId: string) {
   const resume = await getResume(resumeId, userId);
@@ -177,41 +191,46 @@ export async function parseResume(resumeId: string, userId: string) {
         data: { status: 'FAILED', rawText },
       });
       logger.warn('[ResumeService] Parsing failed — Gemini returned null', { resumeId });
-      return { resume: await prisma.resume.findUnique({ where: { id: resumeId } }), parsed: null };
+      const failedResume = await prisma.resume.findUnique({ where: { id: resumeId } });
+      const { storageKey, rawText: _rt, ...publicFailed } = failedResume!;
+      return { resume: publicFailed, parsed: null };
     }
 
-    // 3. Save to DB
-    const updated = await prisma.resume.update({
-      where: { id: resumeId },
-      data: {
-        status: 'PARSED',
-        rawText,
-        parsedData: parsed as any,
-      },
-    });
-
-    // 4. Upsert skills
+    // 3. Save resume, skills, and candidate profile in an atomic Prisma transaction
     const profile = await prisma.candidateProfile.findUnique({
       where: { userId },
       select: { id: true },
     });
 
-    if (profile && parsed.skills?.length) {
-      await upsertCandidateSkills(profile.id, parsed.skills, 'RESUME');
-    }
-
-    // 5. Update candidate profile (only fields supported by the resume)
-    if (profile) {
-      await upsertProfile(userId, {
-        headline: parsed.headline ?? undefined,
-        summary: parsed.summary ?? undefined,
-        location: parsed.location ?? undefined,
-        yearsOfExperience: parsed.yearsOfExperience ?? undefined,
+    const updated = await prisma.$transaction(async (tx) => {
+      const resRecord = await tx.resume.update({
+        where: { id: resumeId },
+        data: {
+          status: 'PARSED',
+          rawText,
+          parsedData: parsed as any,
+        },
       });
-    }
+
+      if (profile && parsed.skills?.length) {
+        await upsertCandidateSkills(profile.id, parsed.skills, 'RESUME');
+      }
+
+      if (profile) {
+        await upsertProfile(userId, {
+          headline: parsed.headline ?? undefined,
+          summary: parsed.summary ?? undefined,
+          location: parsed.location ?? undefined,
+          yearsOfExperience: parsed.yearsOfExperience ?? undefined,
+        });
+      }
+
+      return resRecord;
+    });
 
     logger.info('[ResumeService] Resume parsed successfully', { resumeId, skillCount: parsed.skills?.length ?? 0 });
-    return { resume: updated, parsed };
+    const { storageKey, rawText: _rt, ...publicUpdated } = updated;
+    return { resume: publicUpdated, parsed };
   } catch (err) {
     await prisma.resume.update({
       where: { id: resumeId },
