@@ -202,3 +202,46 @@ export interface CandidateSkill {
   updatedAt: string;
   skill: Skill;
 }
+
+export type RemoteType = 'REMOTE' | 'HYBRID' | 'ONSITE' | 'UNKNOWN';
+export type EmploymentType = 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'INTERNSHIP' | 'TEMPORARY' | 'UNKNOWN';
+export type PostedAtConfidence = 'EXACT' | 'APPROXIMATE' | 'UNKNOWN';
+export type JobStatus = 'ACTIVE' | 'EXPIRED' | 'DUPLICATE';
+
+export interface Job {
+  id: string;
+  title: string;
+  normalizedTitle: string;
+  description?: string | null;
+  company: string;
+  companyUrl?: string | null;
+  jobUrl: string;
+  source: string;
+  sourceJobId?: string | null;
+  location?: string | null;
+  normalizedLocation?: string | null;
+  remoteType: RemoteType;
+  employmentType: EmploymentType;
+  salaryMin?: number | null;
+  salaryMax?: number | null;
+  salaryCurrency?: string | null;
+  postedAt?: string | null;
+  postedAtConfidence: PostedAtConfidence;
+  discoveredAt: string;
+  contentHash: string;
+  status: JobStatus;
+  skills: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface JobsListResponse {
+  jobs: Job[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+

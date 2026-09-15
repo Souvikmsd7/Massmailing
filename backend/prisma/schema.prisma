@@ -345,3 +345,73 @@ enum SkillSource {
   MANUAL
   AI
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Job Discovery — Phase 2
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Job {
+  id                 String             @id @default(uuid())
+  title              String
+  normalizedTitle    String
+  description        String?            @db.Text
+  company            String
+  companyUrl         String?
+  jobUrl             String
+  source             String             // e.g. "firecrawl" | "apify" | "manual"
+  sourceJobId        String?
+  location           String?
+  normalizedLocation String?
+  remoteType         RemoteType         @default(UNKNOWN)
+  employmentType     EmploymentType     @default(UNKNOWN)
+  salaryMin          Int?
+  salaryMax          Int?
+  salaryCurrency     String?
+  postedAt           DateTime?
+  postedAtConfidence PostedAtConfidence @default(UNKNOWN)
+  discoveredAt       DateTime           @default(now())
+  contentHash        String             @unique
+  status             JobStatus          @default(ACTIVE)
+  skills             String[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([source, sourceJobId])
+  @@index([status])
+  @@index([remoteType])
+  @@index([employmentType])
+  @@index([discoveredAt])
+  @@index([postedAt])
+  @@index([company])
+  @@index([normalizedTitle])
+}
+
+// ─── Job Discovery Enums ──────────────────────────────────────────────────────
+
+enum RemoteType {
+  REMOTE
+  HYBRID
+  ONSITE
+  UNKNOWN
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  TEMPORARY
+  UNKNOWN
+}
+
+enum PostedAtConfidence {
+  EXACT
+  APPROXIMATE
+  UNKNOWN
+}
+
+enum JobStatus {
+  ACTIVE
+  EXPIRED
+  DUPLICATE
+}

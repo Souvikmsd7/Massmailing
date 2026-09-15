@@ -16,7 +16,8 @@ import {
   Sparkles,
   BrainCircuit,
   FileText,
-  Star
+  Star,
+  Briefcase
 } from 'lucide-react';
 
 const navItems = [
@@ -31,6 +32,7 @@ const navItems = [
 
 const careerNavItems = [
   { href: '/career', label: 'Career Hub', icon: BrainCircuit },
+  { href: '/career/jobs', label: 'Jobs', icon: Briefcase },
   { href: '/career/resume', label: 'Resume', icon: FileText },
   { href: '/career/profile', label: 'Profile', icon: Star },
   { href: '/career/skills', label: 'Skills', icon: Sparkles },

@@ -27,9 +27,11 @@ import healthRoutes from './routes/health';
 import careerCandidateRoutes from './routes/career/candidate';
 import careerResumeRoutes from './routes/career/resume';
 import careerSkillsRoutes from './routes/career/skills';
+import careerJobsRoutes from './routes/career/jobs';
 
-// Worker
+// Workers
 import { startWorker } from './workers/emailWorker';
+import { startJobDiscoveryWorker } from './workers/jobDiscoveryWorker';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -86,6 +88,7 @@ app.use('/api/analytics', authMiddleware, analyticsRoutes);
 app.use('/api/career', authMiddleware, careerCandidateRoutes);
 app.use('/api/career/resumes', authMiddleware, careerResumeRoutes);
 app.use('/api/career/skills', authMiddleware, careerSkillsRoutes);
+app.use('/api/career/jobs', authMiddleware, careerJobsRoutes);
 
 // 404 handler
 app.use((_req, res) => {
@@ -100,6 +103,7 @@ if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     logger.info(`Server running on http://localhost:${PORT}`);
     startWorker();
+    startJobDiscoveryWorker();
   });
 }
 

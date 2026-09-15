@@ -197,7 +197,29 @@ Skill Normalization + CandidateSkill upsert
       ↓
 CandidateProfile update
       ↓
-PostgreSQL
+**Phase 2 supports — Job Discovery & Ingestion:**
+- Source adapter abstraction (`JobSource` interface) with concrete `FirecrawlAdapter` (gracefully handles missing API keys).
+- Schema-validated job ingestion pipeline (`RawJobSchema` via Zod).
+- Multi-tier deduplication priority: `source + sourceJobId` $\rightarrow$ canonical `jobUrl` $\rightarrow$ SHA-256 `contentHash`.
+- Normalization engine: standardizes titles (e.g. `Sr. ReactJS Developer` $\rightarrow$ `Senior React Developer`), location abbreviations (`NYC` $\rightarrow$ `New York, NY`), remote types (`REMOTE` / `HYBRID` / `ONSITE`), employment types (`FULL_TIME` / `CONTRACT` / `INTERNSHIP`), and skills.
+- Honest date confidence tracking (`EXACT`, `APPROXIMATE`, `UNKNOWN`) to protect against false recency claims in downstream matching.
+- BullMQ `job-discovery` background queue worker.
+- Frontend pages:
+  - `/career/jobs` — Job discovery trigger modal, filter controls (search, remote type, employment type, posted within), and job cards.
+  - `/career/jobs/[id]` — Detailed view of job attributes, date confidence tags, extracted skills, description, and direct link.
+
+**Architecture:**
+```text
+External Sources (Firecrawl / HTTP API)
+      ↓
+POST /api/career/jobs/discover
+      ↓
+BullMQ "job-discovery" queue & JobDiscoveryWorker
+      ↓
+Validation (RawJobSchema) → Normalization → Deduplication (sourceId → URL → SHA256)
+      ↓
+Prisma ORM Upsert → Job Table
+      ↓
+GET /api/career/jobs & /api/career/jobs/:id
 ```
 
-> Note: Job scraping, auto-apply, job matching, RAG, and cover-letter generation are not implemented in Phase 1.
