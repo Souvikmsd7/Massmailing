@@ -196,7 +196,8 @@ export async function parseResume(resumeId: string, userId: string) {
       return { resume: publicFailed, parsed: null };
     }
 
-    // 3. Save resume, skills, and candidate profile in an atomic Prisma transaction
+    // 3. Save resume, skills, and candidate profile in an atomic Prisma transaction.
+    // NOTE: Gemini was called BEFORE the transaction — never open a tx while waiting for AI.
     const profile = await prisma.candidateProfile.findUnique({
       where: { userId },
       select: { id: true },
@@ -213,7 +214,8 @@ export async function parseResume(resumeId: string, userId: string) {
       });
 
       if (profile && parsed.skills?.length) {
-        await upsertCandidateSkills(profile.id, parsed.skills, 'RESUME');
+        // Pass tx so skills are persisted atomically — any failure rolls back the entire tx
+        await upsertCandidateSkills(profile.id, parsed.skills, 'RESUME', tx as any);
       }
 
       if (profile) {

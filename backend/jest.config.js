@@ -5,4 +5,5 @@ module.exports = {
   roots: ['<rootDir>/src'],
   testMatch: ['**/*.test.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
+  forceExit: true, // Ensure Jest exits after tests (BullMQ/Redis connections otherwise keep process alive)
 };

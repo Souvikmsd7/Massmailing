@@ -111,4 +111,38 @@ describe('resumeParser — parseResumeText', () => {
     const resumeSection = calledPrompt.split('RESUME TEXT:')[1] || '';
     expect(resumeSection.length).toBeLessThan(16_000);
   });
+
+  it('returns null when Gemini returns malformed JSON (PARSE_ERROR)', async () => {
+    const { GeminiError } = jest.requireActual('./geminiClient');
+    mockCallGeminiJson.mockRejectedValueOnce(
+      new GeminiError('Gemini returned invalid JSON', 'PARSE_ERROR', false)
+    );
+
+    const result = await parseResumeText('any resume text');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when Gemini times out', async () => {
+    const { GeminiError } = jest.requireActual('./geminiClient');
+    mockCallGeminiJson.mockRejectedValueOnce(
+      new GeminiError('Gemini request timed out', 'TIMEOUT', true)
+    );
+
+    const result = await parseResumeText('any resume text');
+    expect(result).toBeNull();
+  });
+
+  it('handles empty resume text without throwing', async () => {
+    mockCallGeminiJson.mockResolvedValueOnce({
+      skills: [],
+      experience: [],
+      education: [],
+      projects: [],
+      certifications: [],
+    });
+
+    const result = await parseResumeText('');
+    expect(result).not.toBeNull();
+    expect(result!.skills).toEqual([]);
+  });
 });

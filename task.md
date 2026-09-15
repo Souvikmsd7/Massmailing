@@ -1,16 +1,16 @@
-# MassMailer V2 — Phase 1 Remediation & Completion
+# MassMailer V2 — Phase 1 Final Sign-Off
 
-You are working inside the existing **MassMailer** repository.
+You have already implemented Phase 1 — Career Intelligence Foundation.
 
-Your job is to **finish and harden Phase 1 — Career Intelligence Foundation** based on the existing implementation.
+Now perform a **final verification and remediation pass** against the existing code.
 
----
+## CRITICAL SCOPE RULE
 
-# CRITICAL RULES
+This is the **FINAL Phase 1 cleanup only**.
 
-### 1. Do NOT implement Phase 2
+DO NOT implement Phase 2.
 
-Do NOT implement:
+Do NOT add:
 
 - Job discovery
 - Job scraping
@@ -22,151 +22,97 @@ Do NOT implement:
 - RAG
 - pgvector
 - LangChain
-- Cover-letter generation
+- Cover letters
 - Application automation
 - Auto-apply
 - Recruiter discovery
 
-Those belong to later phases.
+Do not redesign the existing MassMailer architecture.
+
+Do not remove or break existing functionality.
 
 ---
 
-### 2. Do NOT rewrite MassMailer
+# OBJECTIVE
 
-This is an existing production-oriented project.
+Resolve the remaining Phase 1 audit items:
 
-Do NOT replace or restructure the existing architecture unnecessarily.
-
-Do NOT remove or break:
-
-- Authentication
-- JWT access/refresh tokens
-- Campaigns
-- Recipients
-- Contacts
-- HR contacts
-- Templates
-- SMTP
-- SMTP health management
-- Email workers
-- Tracking
-- Analytics
-- Follow-ups
-- Redis
-- BullMQ
-- Docker
-- Existing APIs
-
-Existing MassMailer functionality must continue to work exactly as before.
+1. Resume API response privacy
+2. Prisma migration verification
+3. Career API/security/parser test coverage
+4. Transactional persistence for resume/profile/skills
+5. Skill persistence error handling
+6. Full build/test verification
+7. Final Phase 1 documentation/status
 
 ---
 
-### 3. Make additive changes
+# 1. Resume API Response Privacy
 
-The current Career Intelligence implementation already exists.
-
-Your task is to:
-
-1. Inspect it.
-2. Identify incomplete/broken pieces.
-3. Fix them.
-4. Add missing tests.
-5. Verify the entire project.
-6. Do not redesign working code unnecessarily.
-
----
-
-# PHASE 1 TARGET
-
-The completed Phase 1 flow must be:
+Inspect:
 
 ```text
-User
- ↓
-Career Intelligence
- ↓
-Upload Resume
- ↓
-Store Original Resume
- ↓
-Extract PDF Text
- ↓
-Gemini Resume Parsing
- ↓
-Zod Validation
- ↓
-Normalize Skills
- ↓
-Candidate Profile
- ↓
-Candidate Skills
- ↓
-PostgreSQL
- ↓
-User Reviews/Edits Data
+backend/src/services/career/resumeService.ts
+backend/src/routes/career/resume.ts
 ```
 
-Database foundation:
+Specifically:
+
+```http
+GET /api/career/resumes
+GET /api/career/resumes/:id
+```
+
+The API must NOT unnecessarily expose internal/private fields.
+
+Do not return:
 
 ```text
-User
- │
- └── CandidateProfile
-       │
-       ├── Resume
-       │     └── ResumeVersion
-       │
-       └── CandidateSkill
-              │
-              └── Skill
-                    └── SkillAlias
+rawText
+storageKey
+filesystem paths
+internal storage implementation details
+internal processing metadata
 ```
+
+unless the frontend genuinely requires them.
+
+Use Prisma `select` or explicit DTO/serializer functions.
+
+The response should contain only fields needed by the authenticated UI, such as:
+
+```text
+id
+fileName
+fileType
+status
+parsedData
+createdAt
+updatedAt
+```
+
+Use the existing API response conventions.
+
+IMPORTANT:
+
+The internal resume-processing service must still be able to access `rawText` when required.
+
+Do not delete rawText from the database.
 
 ---
 
-# STEP 1 — INSPECT BEFORE MODIFYING
+# 2. Prisma Migration Verification
 
-Before changing anything, inspect:
+Inspect:
 
 ```text
 backend/prisma/schema.prisma
-
-backend/src/server.ts
-
-backend/src/routes/
-
-backend/src/services/
-
-backend/src/services/ai/
-
-backend/src/middleware/
-
-backend/src/workers/
-
-frontend/app/
-
-frontend/components/
-
-frontend/lib/
-
-backend/package.json
-
-backend/package-lock.json
-
 backend/prisma/migrations/
-
-tests
 ```
 
-Understand the existing conventions before modifying files.
+Confirm that the Career Foundation schema has a committed migration.
 
-Do not blindly apply a generic architecture.
-
----
-
-# STEP 2 — VERIFY PRISMA MODELS
-
-Confirm these models exist and work correctly:
+The migration must contain the Phase 1 models:
 
 ```text
 CandidateProfile
@@ -177,745 +123,80 @@ SkillAlias
 CandidateSkill
 ```
 
-Confirm these enums/fields are appropriate:
-
-```text
-ResumeStatus
-SkillProficiency
-SkillSource
-```
-
-Required relationships:
-
-```text
-User → CandidateProfile
-
-CandidateProfile → Resume
-
-Resume → ResumeVersion
-
-CandidateProfile → CandidateSkill
-
-CandidateSkill → Skill
-
-Skill → SkillAlias
-```
-
-Requirements:
-
-- CandidateProfile belongs to exactly one User.
-- `userId` should be unique for CandidateProfile.
-- CandidateSkill must prevent duplicates.
-- Skill normalizedName should be unique.
-- SkillAlias should be unique.
-- Foreign keys should be correct.
-- Use appropriate indexes.
-- Use appropriate cascade behavior.
-
-Do NOT alter existing MassMailer models unless required for compatibility.
-
----
-
-# STEP 3 — VERIFY MIGRATION
-
-Check:
-
-```text
-backend/prisma/migrations/
-```
-
-There must be a committed migration containing the Career Foundation schema changes.
-
-If the migration is missing, create it using:
-
-```bash
-npx prisma migrate dev --name add_career_foundation
-```
-
-Do not modify existing migrations.
+and their relationships/indexes/constraints.
 
 Run:
+
+```bash
+cd backend
+npx prisma migrate status
+```
+
+Then:
 
 ```bash
 npx prisma generate
 ```
 
-Then verify the schema works from a clean database.
+If the migration is missing, create it:
 
-Production migration command should be:
+```bash
+npx prisma migrate dev --name add_career_foundation
+```
+
+Do NOT modify old migrations.
+
+Do NOT delete migration history.
+
+Verify a clean database can be initialized using:
 
 ```bash
 npx prisma migrate deploy
 ```
 
-Do not use `db push` as the canonical production migration process.
+Do not make `prisma db push` the production migration mechanism.
 
 ---
 
-# STEP 4 — FIX PDF DEPENDENCY
+# 3. Career API Test Coverage
 
-Inspect `resumeService.ts`.
+Inspect the existing test architecture first.
 
-If the implementation uses:
+Follow the project's current testing conventions.
 
-```text
-pdf-parse
-```
+Add tests for:
 
-ensure it is explicitly declared in:
+## Candidate Profile
 
 ```text
-backend/package.json
+GET /api/career/profile
+POST /api/career/profile
+PATCH /api/career/profile
 ```
 
-Install it properly and update:
+Test:
 
-```text
-backend/package-lock.json
-```
-
-Verify:
-
-```bash
-npm install
-npm run build
-```
-
-Do not leave undeclared runtime dependencies.
+- authenticated request
+- unauthenticated request
+- valid input
+- invalid input
+- profile creation
+- profile update
 
 ---
 
-# STEP 5 — REGISTER CAREER ROUTES
-
-Inspect:
-
-```text
-backend/src/server.ts
-```
-
-Make sure the Career routes are actually registered with Express.
-
-Required API surface:
-
-```http
-GET    /api/career/profile
-POST   /api/career/profile
-PATCH  /api/career/profile
-
-POST   /api/career/resumes
-GET    /api/career/resumes
-GET    /api/career/resumes/:id
-DELETE /api/career/resumes/:id
-POST   /api/career/resumes/:id/parse
-
-GET    /api/career/skills
-POST   /api/career/skills
-DELETE /api/career/skills/:skillId
-```
-
-Use the existing authentication middleware.
-
-Prefer authentication at the router level where appropriate rather than duplicating authentication logic inside every handler.
-
-Do not accidentally create:
-
-```text
-/api/api/career
-```
-
-or duplicate `/career` prefixes.
-
-After registering the routes, verify every endpoint actually resolves.
-
----
-
-# STEP 6 — CANDIDATE PROFILE SECURITY
-
-Review:
-
-```text
-candidate.ts
-candidateService.ts
-```
-
-Every request must derive the user identity from the authenticated request.
-
-Do NOT trust:
-
-```text
-userId
-candidateId
-```
-
-from the client for authorization.
-
-Correct ownership model:
-
-```text
-authenticated user
-      ↓
-CandidateProfile.userId
-      ↓
-owned resources
-```
-
-Verify that:
-
-```text
-User A cannot read User B profile.
-User A cannot update User B profile.
-User A cannot delete User B profile.
-```
-
-Use Zod for request validation.
-
----
-
-# STEP 7 — RESUME SECURITY
-
-Review all resume operations.
-
-A resume must belong to:
-
-```text
-authenticated user
-    ↓
-candidate profile
-    ↓
-resume
-```
-
-Test that changing:
-
-```text
-/resumes/:id
-```
-
-to another user's resume ID results in an authorization failure.
-
-Do not expose internal storage paths.
-
-Do not use user-provided filenames directly as filesystem paths.
-
-Use generated safe storage keys.
-
-Maintain PDF-only validation and reasonable file-size limits.
-
----
-
-# STEP 8 — RESUME API RESPONSE PRIVACY
-
-Review:
-
-```http
-GET /api/career/resumes
-GET /api/career/resumes/:id
-```
-
-Do NOT unnecessarily return:
-
-```text
-rawText
-internal storage path
-filesystem path
-private internal metadata
-```
-
-unless the frontend genuinely requires it.
-
-Use Prisma `select` or response DTOs.
-
-The internal resume processing service may access rawText.
-
-The public API should return only what the authenticated user interface needs.
-
----
-
-# STEP 9 — RESUME ORIGINAL/VERSION MODEL
-
-Preserve this rule:
-
-```text
-Original Resume
-      ↓
-NEVER OVERWRITE
-```
-
-The original upload must remain unchanged.
-
-The system may create:
-
-```text
-Original
-Optimized Resume A
-Optimized Resume B
-Optimized Resume C
-```
-
-later.
-
-Do not implement optimization now.
-
-Deleting the entire resume is acceptable if the existing product design supports it, but never overwrite the original content during parsing.
-
----
-
-# STEP 10 — RESUME PARSING PIPELINE
-
-Ensure the implementation follows:
-
-```text
-PDF
- ↓
-Text extraction
- ↓
-Raw text
- ↓
-Gemini
- ↓
-Structured JSON
- ↓
-Zod validation
- ↓
-Normalization
- ↓
-Database
-```
-
-Do not call Gemini directly from route handlers.
-
-Preferred structure:
-
-```text
-Route
- ↓
-Resume Service
- ↓
-Resume Parser
- ↓
-Gemini Client
-```
-
----
-
-# STEP 11 — GEMINI CLIENT
-
-Review:
-
-```text
-backend/src/services/ai/geminiClient.ts
-```
-
-It should centralize:
-
-- API key
-- model configuration
-- timeout
-- retry behavior
-- transient errors
-- response parsing
-- Gemini errors
-
-The API key must exist only on the backend.
-
-Never expose:
-
-```text
-GEMINI_API_KEY
-```
-
-to frontend code.
-
-Never hard-code credentials.
-
----
-
-# STEP 12 — STRUCTURED RESUME DATA
-
-Review the Zod schema.
-
-It must support at least:
-
-```text
-headline
-summary
-skills
-experience
-education
-projects
-certifications
-```
-
-Experience should support:
-
-```text
-company
-role
-startDate
-endDate
-description
-technologies
-```
-
-Education:
-
-```text
-institution
-degree
-field
-startDate
-endDate
-```
-
-Projects:
-
-```text
-name
-description
-technologies
-url
-```
-
-Fields should be appropriately optional because resumes differ.
-
----
-
-# STEP 13 — AI ANTI-HALLUCINATION
-
-The parser must explicitly instruct Gemini:
-
-Only extract information supported by the resume.
-
-Never invent:
-
-```text
-employers
-roles
-dates
-skills
-technologies
-achievements
-certifications
-education
-```
-
-If information is missing:
-
-```text
-null
-[]
-```
-
-or the appropriate empty value.
-
-Do not fabricate information to make a candidate look stronger.
-
----
-
-# STEP 14 — SKILL NORMALIZATION
-
-Review:
-
-```text
-skillService.ts
-```
-
-Ensure obvious aliases resolve to one canonical skill.
-
-Examples:
-
-```text
-ReactJS
-React.js
-React JS
-react
-
-→ React
-```
-
-```text
-NodeJS
-Node.js
-Node JS
-
-→ Node.js
-```
-
-```text
-NextJS
-Next.js
-
-→ Next.js
-```
-
-```text
-TS
-TypeScript
-
-→ TypeScript
-```
-
-```text
-JS
-JavaScript
-
-→ JavaScript
-```
-
-```text
-Postgres
-PostgreSQL
-
-→ PostgreSQL
-```
-
-Do not create an enormous hardcoded dictionary.
-
-Use the Skill + SkillAlias database design.
-
-Unknown skills should still be stored safely without generating duplicates.
-
----
-
-# STEP 15 — SKILL PERSISTENCE
-
-Do not silently swallow skill persistence failures.
-
-If multiple skills are being saved:
-
-```text
-skill 1
-skill 2
-skill 3
-...
-```
-
-avoid a state where:
-
-```text
-Resume = PARSED
-Profile = UPDATED
-Skills = partially saved
-```
-
-without reporting the problem.
-
-Prefer a Prisma transaction for related database writes after AI processing is complete.
-
-IMPORTANT:
-
-Do NOT keep a Prisma transaction open while calling Gemini.
-
-Correct:
-
-```text
-Gemini
- ↓
-validate
- ↓
-prepare data
- ↓
-BEGIN transaction
- ↓
-update resume/profile/skills
- ↓
-COMMIT
-```
-
----
-
-# STEP 16 — RESUME PARSE FAILURE STATES
-
-Ensure the Resume status correctly reflects:
-
-```text
-UPLOADED
-PROCESSING
-PARSED
-FAILED
-```
-
-If parsing fails:
-
-```text
-Resume → FAILED
-```
-
-Store a safe error representation if the current schema supports it.
-
-Do not expose stack traces or secrets to the frontend.
-
-The original uploaded file must remain available for retry.
-
----
-
-# STEP 17 — FRONTEND
-
-Inspect the existing frontend conventions.
-
-Add or complete:
-
-```text
-/career
-/career/profile
-/career/resume
-/career/skills
-```
-
-Do not change existing MassMailer pages unnecessarily.
-
-Career dashboard should show:
-
-```text
-Career Intelligence
-
-Resume
-Uploaded / Not uploaded
-
-Resume Status
-Processing / Parsed / Failed
-
-Profile
-Complete / Needs Review
-
-Skills
-React
-Next.js
-TypeScript
-Node.js
-...
-```
-
----
-
-# STEP 18 — RESUME UPLOAD UI
-
-Implement:
-
-```text
-Upload Resume
-      ↓
-Uploading
-      ↓
-Processing
-      ↓
-Parsed
-      ↓
-Review
-```
-
-Handle:
-
-- invalid PDF
-- oversized file
-- upload failure
-- parsing failure
-- retry
-- loading state
-- success state
-
-Do not make the UI assume parsing always succeeds.
-
----
-
-# STEP 19 — PROFILE EDITING
-
-Allow users to edit:
-
-```text
-headline
-summary
-location
-preferredLocations
-preferredRoles
-remotePreference
-salaryMin
-salaryMax
-noticePeriod
-workAuthorization
-yearsOfExperience
-```
-
-Do NOT infer the following from the resume unless explicitly present:
-
-```text
-salary
-notice period
-work authorization
-preferred roles
-preferred locations
-```
-
-AI-generated data must always be editable.
-
----
-
-# STEP 20 — SKILLS UI
-
-Display normalized skills.
-
-Allow appropriate manual modification if consistent with the existing UI.
-
-Example:
-
-```text
-Skills
-
-React
-Next.js
-TypeScript
-Node.js
-PostgreSQL
-Redis
-Docker
-```
-
-Do not expose internal database IDs unnecessarily.
-
----
-
-# STEP 21 — FRONTEND API LAYER
-
-Follow the existing Axios architecture.
-
-If consistent with the current codebase, use:
-
-```text
-frontend/lib/career/
-├── candidateApi.ts
-├── resumeApi.ts
-└── skillsApi.ts
-```
-
-Avoid putting raw Axios calls throughout React components.
-
-Reuse the existing authentication/token-refresh mechanism.
-
-Do not create another authentication system.
-
----
-
-# STEP 22 — TESTS
+# 4. Authorization Tests
 
 This is mandatory.
 
-Add tests following the project's existing test conventions.
-
-## Candidate API
-
-Test:
+Create at least two test users:
 
 ```text
-GET profile
-POST profile
-PATCH profile
-unauthenticated request
-invalid input
+User A
+User B
 ```
 
-## Authorization
-
-Test:
+Verify:
 
 ```text
 User A → User A profile = allowed
@@ -925,71 +206,293 @@ User A → User A resume = allowed
 User A → User B resume = denied
 ```
 
-## Resume
+Also test that client-provided IDs cannot bypass ownership.
+
+Do not rely only on frontend restrictions.
+
+Authorization must be enforced in the backend.
+
+---
+
+# 5. Resume API Tests
 
 Test:
+
+```text
+POST /api/career/resumes
+GET /api/career/resumes
+GET /api/career/resumes/:id
+DELETE /api/career/resumes/:id
+POST /api/career/resumes/:id/parse
+```
+
+At minimum cover:
 
 ```text
 valid PDF
 invalid file type
 oversized file
-list resumes
-get resume
-delete resume
-retry failed parse
+authenticated upload
+unauthenticated upload
+list own resumes
+get own resume
+reject another user's resume
+delete own resume
+parse own resume
+reject parse request for another user's resume
 ```
 
-## Resume Parser
+Use test fixtures rather than committing personal resumes.
+
+---
+
+# 6. Resume Parser Tests
+
+Inspect:
+
+```text
+backend/src/services/ai/geminiClient.ts
+backend/src/services/ai/resumeParser.ts
+backend/src/services/ai/resumeSchema.ts
+```
 
 Mock Gemini.
+
+Do NOT call the real Gemini API in tests.
 
 Test:
 
 ```text
 valid Gemini response
-invalid Gemini response
+valid response with optional fields missing
+invalid schema
 malformed JSON
-missing optional fields
 Gemini timeout
-Gemini API failure
+Gemini API error
+empty resume text
 ```
 
-Do NOT make real Gemini calls from automated tests.
+Verify invalid Gemini output never gets persisted as valid parsed resume data.
 
-## Skills
+---
 
-Test:
+# 7. Skill Tests
+
+Keep the existing normalization tests.
+
+Add/verify:
 
 ```text
 ReactJS → React
 React.js → React
+React JS → React
+
 NodeJS → Node.js
 NextJS → Next.js
+
 TS → TypeScript
 JS → JavaScript
+
 Postgres → PostgreSQL
-duplicate skill prevention
+```
+
+Also test:
+
+```text
+duplicate CandidateSkill
+canonical skill reuse
 alias reuse
-unknown skill handling
+unknown skill
+whitespace handling
+case normalization
 ```
 
 ---
 
-# STEP 23 — BUILD AND REGRESSION
+# 8. Transactional Resume Persistence
 
-Run:
+Inspect the current resume parse flow.
 
-```bash
-npm install
-npm run build
-npm test
+The goal is:
+
+```text
+Gemini
+ ↓
+Zod validation
+ ↓
+Prepare normalized data
+ ↓
+Prisma transaction
+      ├── update Resume
+      ├── update CandidateProfile
+      └── persist CandidateSkill records
+ ↓
+COMMIT
 ```
 
-from the backend.
+IMPORTANT:
 
-Run the frontend build/tests according to the existing project scripts.
+Never keep a Prisma transaction open while calling Gemini.
 
-Verify existing MassMailer functionality:
+Gemini must execute BEFORE the transaction.
+
+If the database transaction fails:
+
+```text
+Resume
+Profile
+Skills
+```
+
+must not be left in a misleading partially updated state.
+
+Use:
+
+```ts
+prisma.$transaction(...)
+```
+
+where appropriate.
+
+---
+
+# 9. Skill Persistence Error Handling
+
+Inspect:
+
+```text
+backend/src/services/career/skillService.ts
+```
+
+Do NOT silently swallow persistence failures.
+
+Avoid behavior like:
+
+```ts
+catch (err) {
+  logger.warn(...)
+}
+```
+
+followed by a successful response.
+
+Instead:
+
+- propagate the failure when the operation is required, or
+- return a structured result if partial success is intentionally supported.
+
+For resume parsing, prefer atomic persistence.
+
+Example:
+
+```text
+12 skills detected
+12 skills persisted
+```
+
+or:
+
+```text
+persistence failed
+→ transaction rolled back
+→ resume parse marked failed
+```
+
+Do not report successful parsing when required skill persistence failed.
+
+---
+
+# 10. Resume Failure State
+
+Verify:
+
+```text
+UPLOADED
+PROCESSING
+PARSED
+FAILED
+```
+
+behavior.
+
+Successful flow:
+
+```text
+UPLOAD
+ ↓
+PROCESSING
+ ↓
+PARSED
+```
+
+Failure:
+
+```text
+UPLOAD
+ ↓
+PROCESSING
+ ↓
+FAILED
+```
+
+If parsing fails:
+
+- original resume must remain intact
+- parsedData must not contain invalid/incomplete AI output
+- the user must be able to retry
+- internal stack traces must not be exposed to the frontend
+
+---
+
+# 11. File Upload Security Verification
+
+Verify existing protections remain intact:
+
+- PDF-only
+- reasonable file-size limit
+- safe generated storage filename
+- no path traversal
+- no use of user filename as filesystem path
+
+If practical, verify PDF file signature/content.
+
+Do not expand file support beyond PDF in this phase.
+
+---
+
+# 12. Frontend Regression
+
+Verify:
+
+```text
+/career
+/career/profile
+/career/resume
+/career/skills
+```
+
+work with the backend.
+
+Check:
+
+- upload
+- loading state
+- processing state
+- parsed state
+- failure state
+- retry
+- profile editing
+- skill display
+
+Do not break existing MassMailer pages.
+
+---
+
+# 13. Existing MassMailer Regression
+
+Run the existing test suite.
+
+Verify at minimum:
 
 ```text
 Authentication
@@ -1002,38 +505,84 @@ Email sending
 Tracking
 Analytics
 Follow-ups
-BullMQ workers
+BullMQ
 ```
 
-Do not change their behavior.
+Do NOT refactor the existing email worker as part of this task.
 
-If an existing test fails because of your changes, fix the regression before reporting completion.
+If a regression appears because of Phase 1 changes, fix it.
 
 ---
 
-# STEP 24 — README
+# 14. Build Verification
 
-Update documentation accurately.
+From backend:
 
-Document:
-
-```text
-Career Intelligence — Phase 1
+```bash
+npm install
+npm run build
+npm test
 ```
 
-Include:
+Run the appropriate frontend commands based on the existing package scripts.
 
-```text
-Candidate profile
-Resume upload
-PDF extraction
-Gemini parsing
-Zod validation
-Skill normalization
-Resume versions
+Also run Prisma:
+
+```bash
+npx prisma generate
+npx prisma migrate status
 ```
 
-Do NOT claim:
+If the project provides a lint command, run it as well.
+
+---
+
+# 15. Database Clean-Install Verification
+
+Use a clean/test database.
+
+Verify:
+
+```bash
+npx prisma migrate deploy
+```
+
+works successfully.
+
+Then verify:
+
+```text
+CandidateProfile
+Resume
+ResumeVersion
+Skill
+SkillAlias
+CandidateSkill
+```
+
+are created correctly.
+
+Do not use a production database for destructive testing.
+
+---
+
+# 16. README Verification
+
+Ensure the README accurately documents Phase 1.
+
+It should mention only:
+
+```text
+Candidate Profile
+Resume Upload
+PDF Extraction
+Gemini Resume Parsing
+Zod Validation
+Skill Normalization
+Resume Versions
+```
+
+It must NOT claim:
 
 ```text
 Job scraping
@@ -1041,206 +590,243 @@ Job matching
 RAG
 Auto-apply
 Application automation
+Cover letters
 ```
 
-because those are future phases.
+as implemented features.
 
-Change production database documentation to:
+For database documentation:
 
-```bash
-npx prisma migrate deploy
-```
-
-and development migration documentation to:
+Development:
 
 ```bash
 npx prisma migrate dev
 ```
 
-Replace example secrets with obvious placeholders:
+Production:
 
-```env
-JWT_SECRET="replace-with-a-long-random-secret"
-JWT_REFRESH_SECRET="replace-with-a-different-long-random-secret"
-DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE"
-GEMINI_API_KEY="your-gemini-api-key"
+```bash
+npx prisma migrate deploy
 ```
+
+Example environment values must clearly be placeholders.
 
 Never commit real credentials.
 
 ---
 
-# STEP 25 — DO NOT OVER-ENGINEER
+# 17. Check Git Diff Carefully
 
-Do NOT add:
+Before finishing, inspect:
+
+```bash
+git status
+git diff
+```
+
+Confirm:
+
+- no secrets
+- no `.env`
+- no personal resumes
+- no real candidate data
+- no API keys
+- no unnecessary generated files
+- no unrelated refactors
+- no Phase 2 implementation
+
+Do not commit secrets even if they are only accidentally present in test fixtures.
+
+---
+
+# 18. Final Phase 1 Acceptance Test
+
+The following complete flow must work:
 
 ```text
-Kafka
-Celery
-MongoDB
-Pinecone
-Kubernetes
-microservices
-Python service
-LangChain
+User Login
+   ↓
+Career Intelligence
+   ↓
+Upload PDF Resume
+   ↓
+Resume Stored
+   ↓
+PDF Text Extracted
+   ↓
+Gemini Parses Resume
+   ↓
+Zod Validates Output
+   ↓
+Skills Normalized
+   ↓
+Candidate Profile Updated
+   ↓
+Candidate Skills Persisted
+   ↓
+Resume Status = PARSED
+   ↓
+User Reviews Data
+   ↓
+User Edits Profile
+   ↓
+Changes Persist
+```
+
+And this must fail safely:
+
+```text
+User A
+ ↓
+User B Resume ID
+ ↓
+403 / appropriate authorization error
+```
+
+---
+
+# 19. DO NOT Add These During This Task
+
+Absolutely no:
+
+```text
+Job
+JobSource
+JobMatch
+Application
+ApplicationQuestion
+RAG
+Embedding
 pgvector
 Apify
 Firecrawl
 Playwright
+LangChain
+AutoApply
 ```
 
-unless something already exists and is required.
-
-Phase 1 should remain:
-
-```text
-Next.js
-Express
-TypeScript
-Prisma
-PostgreSQL
-Redis/BullMQ
-Gemini
-Zod
-Docker
-```
+These belong to Phase 2+.
 
 ---
 
-# PHASE 1 DEFINITION OF DONE
+# FINAL REPORT
 
-Do not report Phase 1 complete until:
+When finished, provide:
 
-### Database
+## 1. Phase 1 Status
 
-- [ ] CandidateProfile
-- [ ] Resume
-- [ ] ResumeVersion
-- [ ] Skill
-- [ ] SkillAlias
-- [ ] CandidateSkill
-- [ ] Correct relationships
-- [ ] Correct indexes
-- [ ] Migration committed
-
-### Backend
-
-- [ ] Career routes registered
-- [ ] Candidate APIs work
-- [ ] Resume APIs work
-- [ ] Skills APIs work
-- [ ] Authentication enforced
-- [ ] Authorization enforced
-- [ ] PDF upload works
-- [ ] PDF extraction works
-- [ ] Gemini parsing works
-- [ ] Zod validation works
-- [ ] Skill normalization works
-- [ ] Original resume preserved
-- [ ] Parse failures handled
-- [ ] API responses don't expose unnecessary private fields
-
-### Frontend
-
-- [ ] Career dashboard
-- [ ] Resume upload
-- [ ] Resume processing state
-- [ ] Profile editing
-- [ ] Skills display/editing
-- [ ] Error handling
-
-### Testing
-
-- [ ] Candidate tests
-- [ ] Resume tests
-- [ ] Authorization tests
-- [ ] Parser tests
-- [ ] Skill tests
-- [ ] Existing tests pass
-- [ ] Build passes
-
-### Security
-
-- [ ] No real secrets committed
-- [ ] Gemini key backend-only
-- [ ] User ownership enforced
-- [ ] File paths protected
-- [ ] File size/type validation
-- [ ] Raw resume text not unnecessarily exposed
-
-### Regression
-
-- [ ] Existing MassMailer features still work
-- [ ] Existing email worker still works
-- [ ] Existing authentication still works
-- [ ] Existing SMTP functionality still works
-
----
-
-# FINAL RESPONSE FORMAT
-
-When you finish, respond with exactly these sections:
-
-## 1. Summary
-
-What was fixed.
-
-## 2. Files Created
-
-List every file.
-
-## 3. Files Modified
-
-List every file and why.
-
-## 4. Database
-
-List models, indexes, relationships and migration.
-
-## 5. APIs
-
-List all Career endpoints and their behavior.
-
-## 6. Frontend
-
-List new pages/components.
-
-## 7. Security
-
-List security/authorization changes.
-
-## 8. Tests
-
-List tests added and exact results.
-
-## 9. Build
-
-Report exact build/test results.
-
-## 10. Regression
-
-Report existing MassMailer functionality verified.
-
-## 11. Remaining Issues
-
-Be honest about anything still incomplete.
-
-## 12. Phase 2 Readiness
-
-Answer:
+Use exactly one:
 
 ```text
 PHASE 1 STATUS: COMPLETE
 ```
 
-only if every mandatory requirement above passes.
-
-Otherwise answer:
+or
 
 ```text
 PHASE 1 STATUS: NOT COMPLETE
 ```
 
-and list exactly what remains.
+Do not claim COMPLETE unless every mandatory check passes.
 
-Do not implement Phase 2.
+## 2. Files Modified
+
+List every file and reason.
+
+## 3. Files Created
+
+List every file and reason.
+
+## 4. Database
+
+Report:
+
+- models
+- indexes
+- relationships
+- migration name
+- migration status
+
+## 5. API
+
+List every Career endpoint tested.
+
+## 6. Security
+
+Report:
+
+- authentication
+- authorization
+- ownership tests
+- file validation
+- response privacy
+- secret handling
+
+## 7. AI
+
+Report:
+
+- Gemini abstraction
+- Zod validation
+- parser tests
+- failure handling
+
+## 8. Resume Processing
+
+Report:
+
+- upload
+- extraction
+- parsing
+- normalization
+- persistence
+- transaction behavior
+
+## 9. Tests
+
+Give the exact test command and result.
+
+Example:
+
+```text
+Tests: 42 passed, 0 failed
+```
+
+Do not invent numbers.
+
+## 10. Build
+
+Report exact result of:
+
+```text
+backend build
+frontend build
+lint, if available
+```
+
+## 11. Regression
+
+Report existing MassMailer tests/features verified.
+
+## 12. Remaining Issues
+
+Be completely honest.
+
+## 13. Phase 2 Readiness
+
+Only after all mandatory requirements pass:
+
+```text
+PHASE 1 STATUS: COMPLETE
+READY FOR PHASE 2
+```
+
+Otherwise:
+
+```text
+PHASE 1 STATUS: NOT COMPLETE
+```
+
+with the exact remaining blockers.
+
+Do NOT implement Phase 2.

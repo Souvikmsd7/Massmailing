@@ -130,7 +130,7 @@ docker compose up -d --build
 cd backend
 npm install
 npx prisma generate
-npx prisma db push
+npx prisma migrate dev   # Development: runs pending migrations and generates client
 npm run dev
 ```
 

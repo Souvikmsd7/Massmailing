@@ -1,7 +1,10 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from '../../utils/logger';
 
 const prisma = new PrismaClient();
+
+// Type alias for a Prisma transaction client
+type PrismaTx = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>;
 
 // ─── Normalization dictionary ─────────────────────────────────────────────────
 
@@ -130,19 +133,25 @@ export async function findOrCreateSkill(rawName: string) {
 /**
  * Upsert CandidateSkill records for a batch of skill names.
  * Avoids duplicate skills for the same candidate.
+ *
+ * @param tx - Optional Prisma transaction client. When provided, errors propagate
+ *             so the enclosing transaction rolls back atomically.
+ *             When omitted, failures are logged and skipped (non-fatal standalone use).
  */
 export async function upsertCandidateSkills(
   candidateId: string,
   skillNames: string[],
-  source: 'RESUME' | 'MANUAL' | 'AI' = 'RESUME'
+  source: 'RESUME' | 'MANUAL' | 'AI' = 'RESUME',
+  tx?: PrismaTx
 ) {
+  const db = tx ?? prisma;
   const unique = [...new Set(skillNames.map((s) => s.trim()).filter(Boolean))];
 
   for (const name of unique) {
-    try {
+    if (tx) {
+      // Inside a transaction — errors must propagate to trigger rollback
       const skill = await findOrCreateSkill(name);
-
-      await prisma.candidateSkill.upsert({
+      await db.candidateSkill.upsert({
         where: {
           candidateId_skillId: { candidateId, skillId: skill.id },
         },
@@ -153,8 +162,24 @@ export async function upsertCandidateSkills(
           source,
         },
       });
-    } catch (err) {
-      logger.warn(`[SkillService] Failed to upsert skill "${name}"`, { err });
+    } else {
+      // Standalone call — swallow individual failures to avoid breaking manual skill add
+      try {
+        const skill = await findOrCreateSkill(name);
+        await prisma.candidateSkill.upsert({
+          where: {
+            candidateId_skillId: { candidateId, skillId: skill.id },
+          },
+          update: { source, updatedAt: new Date() },
+          create: {
+            candidateId,
+            skillId: skill.id,
+            source,
+          },
+        });
+      } catch (err) {
+        logger.warn(`[SkillService] Failed to upsert skill "${name}"`, { err });
+      }
     }
   }
 }
