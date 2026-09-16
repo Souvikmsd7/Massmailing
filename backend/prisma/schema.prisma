@@ -231,41 +231,41 @@ model SmtpAccount {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model CandidateProfile {
-  id                  String          @id @default(uuid())
-  userId              String          @unique
-  user                User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  headline            String?
-  summary             String?         @db.Text
-  location            String?
-  preferredLocations  String[]
-  remotePreference    String?         // "remote" | "hybrid" | "onsite"
-  preferredRoles      String[]
-  salaryMin           Int?
-  salaryMax           Int?
-  noticePeriod        String?
-  workAuthorization   String?
-  yearsOfExperience   Float?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-  resumes             Resume[]
-  skills              CandidateSkill[]
+  id                 String           @id @default(uuid())
+  userId             String           @unique
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  headline           String?
+  summary            String?          @db.Text
+  location           String?
+  preferredLocations String[]
+  remotePreference   String? // "remote" | "hybrid" | "onsite"
+  preferredRoles     String[]
+  salaryMin          Int?
+  salaryMax          Int?
+  noticePeriod       String?
+  workAuthorization  String?
+  yearsOfExperience  Float?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  resumes            Resume[]
+  skills             CandidateSkill[]
 
   @@index([userId])
 }
 
 model Resume {
-  id          String        @id @default(uuid())
+  id          String           @id @default(uuid())
   candidateId String
   candidate   CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   fileName    String
   fileType    String
-  storageKey  String        @unique
-  rawText     String?       @db.Text
+  storageKey  String           @unique
+  rawText     String?          @db.Text
   parsedData  Json?
-  status      ResumeStatus  @default(UPLOADED)
-  isOriginal  Boolean       @default(true)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  status      ResumeStatus     @default(UPLOADED)
+  isOriginal  Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
   versions    ResumeVersion[]
 
   @@index([candidateId])
@@ -278,7 +278,7 @@ model ResumeVersion {
   resumeId  String
   resume    Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
   name      String
-  type      String   // e.g. "original" | "optimized"
+  type      String // e.g. "original" | "optimized"
   content   Json
   metadata  Json?
   createdAt DateTime @default(now())
@@ -287,11 +287,11 @@ model ResumeVersion {
 }
 
 model Skill {
-  id             String         @id @default(uuid())
+  id             String           @id @default(uuid())
   name           String
-  normalizedName String         @unique
+  normalizedName String           @unique
   category       String?
-  createdAt      DateTime       @default(now())
+  createdAt      DateTime         @default(now())
   aliases        SkillAlias[]
   candidates     CandidateSkill[]
 
@@ -309,15 +309,15 @@ model SkillAlias {
 }
 
 model CandidateSkill {
-  candidateId  String
-  candidate    CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  skillId      String
-  skill        Skill            @relation(fields: [skillId], references: [id], onDelete: Cascade)
-  proficiency  SkillProficiency?
-  years        Float?
-  source       SkillSource      @default(RESUME)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  candidateId String
+  candidate   CandidateProfile  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  skillId     String
+  skill       Skill             @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  proficiency SkillProficiency?
+  years       Float?
+  source      SkillSource       @default(RESUME)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
   @@id([candidateId, skillId])
   @@index([candidateId])
@@ -358,7 +358,8 @@ model Job {
   company            String
   companyUrl         String?
   jobUrl             String
-  source             String             // e.g. "firecrawl" | "apify" | "manual"
+  canonicalJobUrl    String? // Normalized URL for deduplication (tracking params stripped)
+  source             String // e.g. "firecrawl" | "apify" | "manual"
   sourceJobId        String?
   location           String?
   normalizedLocation String?
@@ -377,6 +378,7 @@ model Job {
   updatedAt          DateTime           @updatedAt
 
   @@unique([source, sourceJobId])
+  @@index([canonicalJobUrl])
   @@index([status])
   @@index([remoteType])
   @@index([employmentType])

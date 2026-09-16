@@ -69,8 +69,17 @@ export interface JobSource {
 
   /**
    * Discover jobs from the external source.
-   * Must return validated RawJob objects.
-   * Should return [] and log a warning (not throw) if the source is unavailable.
+   *
+   * Return semantics:
+   *   - Returns RawJob[] (may be empty) on success.
+   *   - MUST THROW for transient failures (timeout, HTTP 429, 5xx, network error)
+   *     so that BullMQ can retry the job with exponential backoff.
+   *   - MUST THROW a non-retryable error for configuration failures (e.g. missing API key)
+   *     so the caller can distinguish config problems from transient ones.
+   *   - MAY log + skip individual invalid results without failing the whole call.
+   *
+   * The ingestion pipeline remains source-agnostic: adapters must not leak
+   * provider-specific structures beyond this boundary.
    */
   discoverJobs(input: JobDiscoveryInput): Promise<RawJob[]>;
 }

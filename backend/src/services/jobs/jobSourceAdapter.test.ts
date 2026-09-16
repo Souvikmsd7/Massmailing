@@ -1,5 +1,5 @@
 import { RawJobSchema } from './jobSourceAdapter';
-import { FirecrawlAdapter } from './adapters/firecrawlAdapter';
+import { FirecrawlAdapter, FirecrawlConfigurationError } from './adapters/firecrawlAdapter';
 
 describe('jobSourceAdapter & FirecrawlAdapter', () => {
   describe('RawJobSchema Zod validation', () => {
@@ -53,13 +53,12 @@ describe('jobSourceAdapter & FirecrawlAdapter', () => {
   });
 
   describe('FirecrawlAdapter safety contract', () => {
-    it('returns empty array when FIRECRAWL_API_KEY is missing without throwing', async () => {
+    it('throws FirecrawlConfigurationError when FIRECRAWL_API_KEY is missing', async () => {
       delete process.env.FIRECRAWL_API_KEY;
       const adapter = new FirecrawlAdapter();
 
-      const results = await adapter.discoverJobs({ keywords: 'Node.js' });
-      expect(Array.isArray(results)).toBe(true);
-      expect(results).toEqual([]);
+      await expect(adapter.discoverJobs({ keywords: 'Node.js' }))
+        .rejects.toThrow(FirecrawlConfigurationError);
     });
 
     it('has name "firecrawl"', () => {

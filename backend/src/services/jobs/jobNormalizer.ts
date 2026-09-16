@@ -15,11 +15,11 @@ import { RawJob } from './jobSourceAdapter';
  * e.g. "React JS Developer" → "React Developer"
  */
 const TITLE_REPLACEMENTS: Array<[RegExp, string]> = [
-  [/\bReact\.?JS\b/gi, 'React'],
-  [/\bNode\.?JS\b/gi, 'Node.js'],
-  [/\bNext\.?JS\b/gi, 'Next.js'],
-  [/\bVue\.?JS\b/gi, 'Vue.js'],
-  [/\bAngular\.?JS\b/gi, 'Angular'],
+  [/\bReact\.?\s*JS\b/gi, 'React'],
+  [/\bNode\.?\s*JS\b/gi, 'Node.js'],
+  [/\bNext\.?\s*JS\b/gi, 'Next.js'],
+  [/\bVue\.?\s*JS\b/gi, 'Vue.js'],
+  [/\bAngular\.?\s*JS\b/gi, 'Angular'],
   [/\bTypeScript\b/gi, 'TypeScript'],
   [/\bJavaScript\b/gi, 'JavaScript'],
   [/\bFull[\s-]?Stack\b/gi, 'Full Stack'],
@@ -63,9 +63,13 @@ export function normalizeLocation(location: string | null | undefined): string |
 // ─── Remote Type Normalization ─────────────────────────────────────────────────
 
 const REMOTE_PATTERNS: Array<[RegExp, 'REMOTE' | 'HYBRID' | 'ONSITE']> = [
-  [/\bfully[\s-]?remote\b|\bwork[\s-]?from[\s-]?home\b|\bremote[\s-]?only\b/i, 'REMOTE'],
-  [/\bremote\b/i, 'REMOTE'],
+  // Hybrid/partial must come before general remote to avoid misclassification
   [/\bhybrid\b|\bpartially[\s-]?remote\b|\bflexible[\s-]?location\b/i, 'HYBRID'],
+  // Fully remote (strong signals)
+  [/\bfully[\s-]?remote\b|\bwork[\s-]?from[\s-]?home\b|\bremote[\s-]?only\b/i, 'REMOTE'],
+  // General remote
+  [/\bremote\b/i, 'REMOTE'],
+  // Onsite
   [/\bin[\s-]?office\b|\bon[\s-]?site\b|\bonsite\b|\bin[\s-]?person\b/i, 'ONSITE'],
 ];
 

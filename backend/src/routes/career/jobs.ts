@@ -1,4 +1,13 @@
+/**
+ * Career Jobs Routes.
+ *
+ * All routes require authentication (applied at server.ts level).
+ *
+ * Input validation is authoritative here — do not rely on frontend validation.
+ */
+
 import { Response, Router } from 'express';
+import { z } from 'zod';
 import { AuthRequest } from '../../middleware/auth';
 import {
   enqueueDiscovery,
@@ -10,27 +19,86 @@ import { logger } from '../../utils/logger';
 
 const router = Router();
 
-// POST /api/career/jobs/discover
+// ─── Validation Schemas ────────────────────────────────────────────────────────
+
+const DiscoverBodySchema = z.object({
+  /** Accept both 'keywords' and 'query' for backward compatibility */
+  keywords: z.string().trim().min(1, 'keywords is required').max(500).optional(),
+  query: z.string().trim().min(1, 'query is required').max(500).optional(),
+  location: z.string().trim().max(500).optional(),
+  /** maxResults / limit — number of jobs to request from source adapters */
+  maxResults: z.number().int('maxResults must be an integer').min(1).max(100).optional(),
+  limit: z.number().int('limit must be an integer').min(1).max(100).optional(),
+  /** Which source adapters to use */
+  sources: z.array(z.string().min(1).max(100)).max(10).optional(),
+}).refine(
+  (data) => data.keywords || data.query,
+  { message: 'keywords or query is required' }
+);
+
+const ListJobsQuerySchema = z.object({
+  search: z.string().trim().max(500).optional(),
+  keyword: z.string().trim().max(500).optional(),
+  location: z.string().trim().max(500).optional(),
+  remoteType: z.enum(['REMOTE', 'HYBRID', 'ONSITE', 'UNKNOWN'], {
+    errorMap: () => ({ message: 'remoteType must be one of: REMOTE, HYBRID, ONSITE, UNKNOWN' }),
+  }).optional(),
+  employmentType: z.enum(['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', 'TEMPORARY', 'UNKNOWN'], {
+    errorMap: () => ({ message: 'employmentType must be one of: FULL_TIME, PART_TIME, CONTRACT, INTERNSHIP, TEMPORARY, UNKNOWN' }),
+  }).optional(),
+  source: z.string().trim().max(100).optional(),
+  postedWithin: z.enum(['24h', '7d', '30d'], {
+    errorMap: () => ({ message: 'postedWithin must be one of: 24h, 7d, 30d' }),
+  }).optional(),
+  company: z.string().trim().max(500).optional(),
+  page: z.coerce
+    .number({ invalid_type_error: 'page must be a number' })
+    .int('page must be an integer')
+    .min(1, 'page must be >= 1')
+    .default(1),
+  limit: z.coerce
+    .number({ invalid_type_error: 'limit must be a number' })
+    .int('limit must be an integer')
+    .min(1, 'limit must be >= 1')
+    .max(100, 'limit must be <= 100')
+    .default(20),
+});
+
+const JobIdParamSchema = z.object({
+  id: z.string().trim().min(1, 'Job ID cannot be empty').max(200),
+});
+
+// ─── Helper ────────────────────────────────────────────────────────────────────
+
+function zodValidationError(issues: z.ZodIssue[]): { code: string; message: string; details: string } {
+  return {
+    code: 'VALIDATION_ERROR',
+    message: issues.map((i) => i.message).join('; '),
+    details: JSON.stringify(issues),
+  };
+}
+
+// ─── POST /api/career/jobs/discover ───────────────────────────────────────────
+
 router.post('/discover', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { query, keywords, location, limit, sources } = req.body || {};
-    const searchKeywords = query || keywords;
-
-    if (!searchKeywords || typeof searchKeywords !== 'string' || !searchKeywords.trim()) {
-      res.status(400).json({
-        success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Query/keywords parameter is required' },
-      });
+    const parsed = DiscoverBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: zodValidationError(parsed.error.issues) });
       return;
     }
 
+    const { keywords, query, location, maxResults, limit, sources } = parsed.data;
+    const searchKeywords = (keywords || query)!;
+    const effectiveMaxResults = maxResults ?? limit;
+
     const jobId = await enqueueDiscovery({
       input: {
-        keywords: searchKeywords.trim(),
-        location: typeof location === 'string' ? location.trim() : undefined,
-        maxResults: typeof limit === 'number' ? limit : undefined,
+        keywords: searchKeywords,
+        location: location || undefined,
+        maxResults: effectiveMaxResults,
       },
-      sources: Array.isArray(sources) ? sources : undefined,
+      sources,
     });
 
     res.status(202).json({
@@ -54,12 +122,20 @@ router.post('/discover', async (req: AuthRequest, res: Response): Promise<void> 
   }
 });
 
-// GET /api/career/jobs
+// ─── GET /api/career/jobs ─────────────────────────────────────────────────────
+
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const {
-      search,
-      keyword,
+    const parsed = ListJobsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: zodValidationError(parsed.error.issues) });
+      return;
+    }
+
+    const { search, keyword, location, remoteType, employmentType, source, postedWithin, company, page, limit } = parsed.data;
+
+    const result = await listJobs({
+      keyword: search || keyword,
       location,
       remoteType,
       employmentType,
@@ -68,24 +144,9 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       company,
       page,
       limit,
-    } = req.query;
-
-    const result = await listJobs({
-      keyword: typeof search === 'string' ? search : typeof keyword === 'string' ? keyword : undefined,
-      location: typeof location === 'string' ? location : undefined,
-      remoteType: typeof remoteType === 'string' ? remoteType : undefined,
-      employmentType: typeof employmentType === 'string' ? employmentType : undefined,
-      source: typeof source === 'string' ? source : undefined,
-      postedWithin: typeof postedWithin === 'string' ? postedWithin : undefined,
-      company: typeof company === 'string' ? company : undefined,
-      page: page ? Number(page) : 1,
-      limit: limit ? Number(limit) : 20,
     });
 
-    res.json({
-      success: true,
-      data: result,
-    });
+    res.json({ success: true, data: result });
   } catch (err) {
     if (err instanceof AppError) {
       res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });
@@ -99,20 +160,24 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   }
 });
 
-// GET /api/career/jobs/:id
+// ─── GET /api/career/jobs/:id ─────────────────────────────────────────────────
+
 router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const jobId = String(req.params.id);
+    const parsed = JobIdParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: zodValidationError(parsed.error.issues) });
+      return;
+    }
+
+    const { id: jobId } = parsed.data;
     const job = await getJobById(jobId);
 
     if (!job) {
       throw new NotFoundError('Job not found', 'JOB_NOT_FOUND');
     }
 
-    res.json({
-      success: true,
-      data: job,
-    });
+    res.json({ success: true, data: job });
   } catch (err) {
     if (err instanceof AppError) {
       res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });

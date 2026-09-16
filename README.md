@@ -197,29 +197,138 @@ Skill Normalization + CandidateSkill upsert
       ↓
 CandidateProfile update
       ↓
+```
+
 **Phase 2 supports — Job Discovery & Ingestion:**
-- Source adapter abstraction (`JobSource` interface) with concrete `FirecrawlAdapter` (gracefully handles missing API keys).
-- Schema-validated job ingestion pipeline (`RawJobSchema` via Zod).
-- Multi-tier deduplication priority: `source + sourceJobId` $\rightarrow$ canonical `jobUrl` $\rightarrow$ SHA-256 `contentHash`.
-- Normalization engine: standardizes titles (e.g. `Sr. ReactJS Developer` $\rightarrow$ `Senior React Developer`), location abbreviations (`NYC` $\rightarrow$ `New York, NY`), remote types (`REMOTE` / `HYBRID` / `ONSITE`), employment types (`FULL_TIME` / `CONTRACT` / `INTERNSHIP`), and skills.
-- Honest date confidence tracking (`EXACT`, `APPROXIMATE`, `UNKNOWN`) to protect against false recency claims in downstream matching.
-- BullMQ `job-discovery` background queue worker.
-- Frontend pages:
-  - `/career/jobs` — Job discovery trigger modal, filter controls (search, remote type, employment type, posted within), and job cards.
-  - `/career/jobs/[id]` — Detailed view of job attributes, date confidence tags, extracted skills, description, and direct link.
+
+> ⚠️ **Phase 3 (Job Matching, pgvector, RAG, Resume Optimization, Auto-Apply, AI Scoring) is NOT implemented.**
+
+### JobSource Abstraction
+
+All external job sources implement the `JobSource` interface:
+
+```typescript
+interface JobSource {
+  readonly name: string;
+  discoverJobs(input: JobDiscoveryInput): Promise<RawJob[]>;
+}
+```
+
+- Transient errors (HTTP 429, 5xx, timeout) **must throw** → BullMQ retries
+- Configuration errors (missing API key) **must throw** → operator action required
+- Invalid individual results may be logged and skipped without failing the whole call
+
+### Firecrawl Source Adapter
+
+- Uses the [Firecrawl](https://firecrawl.dev) API to scrape public job board pages
+- **Discovery flow**: scrape search results page → extract individual job URLs → scrape each job page → return `RawJob[]`
+- Respects `maxResults` — may return fewer if the source provides fewer valid listings
+- API key stored server-side only (`FIRECRAWL_API_KEY`) — never exposed to clients
+- Requires `FIRECRAWL_API_KEY` environment variable (throws `FirecrawlConfigurationError` if missing)
+
+### Normalization
+
+Standardizes raw job data before storage:
+- **Titles**: `Sr. ReactJS Developer` → `Senior React Developer`, `Node JS` → `Node.js`, `Full-Stack` → `Full Stack`
+- **Location**: `NYC` → `New York, NY`, `SF` → `San Francisco, CA`, `US` → `United States`
+- **Remote type**: `REMOTE` / `HYBRID` / `ONSITE` / `UNKNOWN` (hybrid/partial detected before general remote)
+- **Employment type**: `FULL_TIME` / `PART_TIME` / `CONTRACT` / `INTERNSHIP` / `TEMPORARY` / `UNKNOWN`
+- **Skills**: Normalized via Phase 1 skill normalizer (ReactJS → React, NodeJS → Node.js); deduplication applied
+
+### Deduplication
+
+Three-tier priority deduplication — idempotent ingestion:
+
+| Priority | Key | Notes |
+|:---|:---|:---|
+| 1 | `source + sourceJobId` | DB unique constraint |
+| 2 | `canonicalJobUrl` | Tracking params stripped (utm_*, fbclid, gclid, ref, src); hostname lowercased; default ports removed; trailing slash normalized |
+| 3 | `contentHash` | SHA-256 of title + company + location + first 500 chars of description |
+
+### Posted-Date Confidence
+
+Three confidence levels prevent false recency claims:
+
+| Confidence | Meaning |
+|:---|:---|
+| `EXACT` | Source provided a reliable ISO timestamp or `YYYY-MM-DD` date |
+| `APPROXIMATE` | Source gave a relative string ("2 days ago", "Today") — approximate timestamp computed |
+| `UNKNOWN` | No usable date information — `postedAt` is null |
+
+`UNKNOWN` jobs are **excluded** from all `postedWithin` time-range filters.
+
+### Ingestion Statistics
+
+Each discovery run returns detailed statistics:
+
+```typescript
+{ received, invalid, created, updated, duplicate, errors }
+```
+
+- `created`: genuinely new job inserted
+- `updated`: existing job with changed content/status
+- `duplicate`: exact match found, no changes needed
+- `invalid`: failed Zod validation
+- `errors`: unexpected persistence failures
+
+### BullMQ Job Discovery Queue
+
+- Queue: `job-discovery`
+- Attempts: 3 with exponential backoff (5s delay)
+- Concurrency: 2 workers
+- Transient errors propagate to trigger BullMQ retry
+- Non-retryable config errors are logged clearly for operator action
+
+### Supported Filters (GET /api/career/jobs)
+
+| Filter | Values | Notes |
+|:---|:---|:---|
+| `search` / `keyword` | string | Searches title, company, description |
+| `location` | string | Partial match on normalizedLocation |
+| `remoteType` | `REMOTE` \| `HYBRID` \| `ONSITE` \| `UNKNOWN` | Must be valid enum — invalid returns 400 |
+| `employmentType` | `FULL_TIME` \| `PART_TIME` \| `CONTRACT` \| `INTERNSHIP` \| `TEMPORARY` \| `UNKNOWN` | Must be valid enum |
+| `postedWithin` | `24h` \| `7d` \| `30d` | Only applies to EXACT/APPROXIMATE jobs |
+| `company` | string | Partial match |
+| `page` | integer ≥ 1 | Default: 1 |
+| `limit` | integer 1–100 | Default: 20 |
+
+### Environment Variables
+
+```env
+# Required for Firecrawl discovery
+FIRECRAWL_API_KEY=your-firecrawl-api-key
+
+# Existing (already required)
+DATABASE_URL=postgresql://...
+REDIS_URL=redis://...
+```
 
 **Architecture:**
 ```text
-External Sources (Firecrawl / HTTP API)
+External Sources (Firecrawl API)
       ↓
-POST /api/career/jobs/discover
+POST /api/career/jobs/discover  [Zod validated]
       ↓
-BullMQ "job-discovery" queue & JobDiscoveryWorker
+BullMQ "job-discovery" queue (attempts=3, exponential backoff)
       ↓
-Validation (RawJobSchema) → Normalization → Deduplication (sourceId → URL → SHA256)
+JobDiscoveryWorker
+      ↓ (throws on transient errors → BullMQ retries)
+FirecrawlAdapter.discoverJobs()
+  → Scrape search results page
+  → Extract job URLs from markdown
+  → Scrape each individual job page (up to maxResults)
+  → Return RawJob[]
       ↓
-Prisma ORM Upsert → Job Table
+RawJobSchema Zod validation
       ↓
-GET /api/career/jobs & /api/career/jobs/:id
+Job normalization (title, location, remote type, skills)
+      ↓
+Canonical URL normalization (tracking params stripped)
+      ↓
+Deduplication lookup (source+id → canonicalUrl → contentHash)
+      ↓
+Prisma ORM create/update → Job table
+      ↓
+GET /api/career/jobs  [Zod validated query params]
+GET /api/career/jobs/:id
 ```
-
