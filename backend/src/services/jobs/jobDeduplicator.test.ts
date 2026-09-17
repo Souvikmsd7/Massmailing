@@ -273,4 +273,125 @@ describe('jobDeduplicator', () => {
       expect(result.contentHash).toBeDefined();
     });
   });
+
+  // ─── Section E: Idempotency ───────────────────────────────────────────────────
+  //
+  // Verifies that the deduplication keys are stable across repeated calls with the
+  // same input. This is the unit-level guarantee that enables idempotent ingestion:
+  // the same job always produces the same (contentHash, canonicalJobUrl) pair,
+  // so the DB lookup in jobIngestionService will find the existing record and
+  // classify it as "duplicate" rather than creating a new one.
+
+  describe('Idempotency — same input produces same deduplication keys', () => {
+    const job: NormalizedJob = {
+      title: 'Software Engineer',
+      normalizedTitle: 'Software Engineer',
+      company: 'Example Corp',
+      companyUrl: null,
+      description: 'Build distributed systems.',
+      jobUrl: 'https://example.com/jobs/123?utm_source=linkedin',
+      source: 'firecrawl',
+      sourceJobId: 'fc-123',
+      location: 'Remote',
+      normalizedLocation: 'Remote',
+      remoteType: 'REMOTE',
+      employmentType: 'FULL_TIME',
+      salaryMin: null,
+      salaryMax: null,
+      salaryCurrency: null,
+      postedAt: null,
+      postedAtConfidence: 'UNKNOWN',
+      skills: ['Node.js', 'TypeScript'],
+    };
+
+    it('produces identical contentHash on repeated calls', () => {
+      const r1 = buildDeduplicatedJob(job);
+      const r2 = buildDeduplicatedJob(job);
+      expect(r1.contentHash).toBe(r2.contentHash);
+    });
+
+    it('produces identical canonicalJobUrl on repeated calls', () => {
+      const r1 = buildDeduplicatedJob(job);
+      const r2 = buildDeduplicatedJob(job);
+      expect(r1.canonicalJobUrl).toBe(r2.canonicalJobUrl);
+    });
+
+    it('same contentHash regardless of source field — cross-source dedup', () => {
+      const jobA = { ...job, source: 'firecrawl', sourceJobId: 'fc-1' };
+      const jobB = { ...job, source: 'indeed', sourceJobId: 'indeed-999' };
+      expect(buildDeduplicatedJob(jobA).contentHash).toBe(buildDeduplicatedJob(jobB).contentHash);
+    });
+  });
+
+  // ─── Section B: Canonical URL variants (from task.md spec) ───────────────────
+
+  describe('Canonical URL variants from task.md requirements', () => {
+    const CANONICAL = 'https://example.com/jobs/123';
+
+    it('bare URL → canonical', () => {
+      expect(normalizeJobUrl('https://example.com/jobs/123')).toBe(CANONICAL);
+    });
+
+    it('trailing slash removed → same canonical', () => {
+      expect(normalizeJobUrl('https://example.com/jobs/123/')).toBe(CANONICAL);
+    });
+
+    it('utm_source=google → same canonical', () => {
+      expect(normalizeJobUrl('https://example.com/jobs/123?utm_source=google')).toBe(CANONICAL);
+    });
+
+    it('utm_source=linkedin → same canonical', () => {
+      expect(normalizeJobUrl('https://example.com/jobs/123?utm_source=linkedin')).toBe(CANONICAL);
+    });
+
+    it('meaningful query param (gh_jid) is preserved — NOT the same canonical as bare URL', () => {
+      const withGhJid = normalizeJobUrl('https://example.com/jobs?gh_jid=456');
+      const bare = normalizeJobUrl('https://example.com/jobs');
+      expect(withGhJid).not.toBe(bare);
+      expect(withGhJid).toContain('gh_jid=456');
+    });
+
+    it('different path → different canonical (genuinely different jobs)', () => {
+      expect(normalizeJobUrl('https://example.com/jobs/123'))
+        .not.toBe(normalizeJobUrl('https://example.com/jobs/456'));
+    });
+
+    it('different domain → different canonical (different companies)', () => {
+      expect(normalizeJobUrl('https://company-a.com/jobs/123'))
+        .not.toBe(normalizeJobUrl('https://company-b.com/jobs/123'));
+    });
+  });
+
+  // ─── Section C: Content hash for cross-source duplicate detection ─────────────
+
+  describe('Content hash — cross-source deduplication', () => {
+    it('same title+company+location+description → same hash regardless of source', () => {
+      const h1 = generateContentHash({
+        normalizedTitle: 'Software Engineer',
+        company: 'Acme',
+        normalizedLocation: 'Remote',
+        description: 'Build things.',
+      });
+      const h2 = generateContentHash({
+        normalizedTitle: 'Software Engineer',
+        company: 'Acme',
+        normalizedLocation: 'Remote',
+        description: 'Build things.',
+      });
+      expect(h1).toBe(h2);
+    });
+
+    it('different title → different hash (different jobs not deduplicated)', () => {
+      const h1 = generateContentHash({ normalizedTitle: 'Frontend Engineer', company: 'Acme', normalizedLocation: null, description: null });
+      const h2 = generateContentHash({ normalizedTitle: 'Backend Engineer', company: 'Acme', normalizedLocation: null, description: null });
+      expect(h1).not.toBe(h2);
+    });
+
+    it('different company → different hash (different employers not deduplicated)', () => {
+      const h1 = generateContentHash({ normalizedTitle: 'Engineer', company: 'Acme', normalizedLocation: null, description: null });
+      const h2 = generateContentHash({ normalizedTitle: 'Engineer', company: 'OtherCorp', normalizedLocation: null, description: null });
+      expect(h1).not.toBe(h2);
+    });
+  });
 });
+

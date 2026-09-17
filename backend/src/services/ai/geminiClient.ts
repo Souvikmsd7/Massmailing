@@ -12,7 +12,7 @@
  */
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 const GEMINI_TIMEOUT_MS = 30_000;
 const GEMINI_MAX_RETRIES = 2;
 
@@ -65,6 +65,10 @@ export async function callGemini(prompt: string, jsonMode = true): Promise<strin
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       });
+
+      if (response.status === 401 || (response.status === 400 && !(await response.clone().text().catch(() => '')).includes('INVALID_ARGUMENT'))) {
+        throw new GeminiError('Invalid or unauthorized Google Gemini API key. Pass a valid API key from https://aistudio.google.com/', 'NO_API_KEY', false);
+      }
 
       if (response.status === 429) {
         lastError = new GeminiError('Gemini rate limit exceeded', 'RATE_LIMITED', true);

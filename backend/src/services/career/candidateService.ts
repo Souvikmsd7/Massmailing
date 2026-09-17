@@ -44,11 +44,16 @@ export async function getProfile(userId: string) {
   });
 }
 
+// Type alias for a Prisma transaction client
+type PrismaTx = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>;
+
 /**
  * Create or update the candidate profile. Scoped to userId.
+ * Accepts optional Prisma transaction client for atomic execution inside $transaction.
  */
-export async function upsertProfile(userId: string, data: UpsertCandidateData) {
-  return prisma.candidateProfile.upsert({
+export async function upsertProfile(userId: string, data: UpsertCandidateData, tx?: PrismaTx) {
+  const db = tx ?? prisma;
+  return db.candidateProfile.upsert({
     where: { userId },
     create: {
       userId,

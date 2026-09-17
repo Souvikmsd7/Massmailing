@@ -1,8 +1,34 @@
 import { PrismaClient } from '@prisma/client';
-// pdf-parse is a CommonJS module; use require() to avoid TS call-signature issues
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string; numpages: number }>;
-import { NotFoundError, ForbiddenError, BadRequestError } from '../../utils/errors';
+/**
+ * Safely extract text from PDF buffer, supporting both pdf-parse v1 (function export) and v2 (PDFParse class export).
+ */
+async function extractPdfText(buffer: Buffer): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const pdfModule = require('pdf-parse');
+
+  if (typeof pdfModule === 'function') {
+    const data = await pdfModule(buffer);
+    return data?.text || '';
+  }
+
+  if (typeof pdfModule?.default === 'function') {
+    const data = await pdfModule.default(buffer);
+    return data?.text || '';
+  }
+
+  if (typeof pdfModule?.PDFParse === 'function') {
+    const parser = new pdfModule.PDFParse({ data: buffer });
+    const result = await parser.getText();
+    if (typeof result === 'string') {
+      return result;
+    }
+    return result?.text || '';
+  }
+
+  throw new Error('pdfParse is not a function');
+}
+
+import { AppError, NotFoundError, ForbiddenError, BadRequestError } from '../../utils/errors';
 import { storeFile, getFilePath, deleteStoredFile } from './storageService';
 import { parseResumeText } from '../ai/resumeParser';
 import { upsertCandidateSkills } from './skillService';
@@ -178,9 +204,20 @@ export async function parseResume(resumeId: string, userId: string) {
     // 1. Extract text
     const filePath = getFilePath(resume.storageKey);
     const fs = await import('fs');
-    const buffer = fs.readFileSync(filePath);
-    const pdfData = await pdfParse(buffer);
-    const rawText = pdfData.text;
+
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundError('Resume file not found on disk. Please re-upload your resume.', 'FILE_NOT_FOUND');
+    }
+
+    let rawText = '';
+    try {
+      const buffer = fs.readFileSync(filePath);
+      rawText = await extractPdfText(buffer);
+    } catch (pdfErr: any) {
+      if (pdfErr instanceof AppError) throw pdfErr;
+      logger.error('[ResumeService] Failed to read or parse PDF file', { resumeId }, pdfErr as Error);
+      throw new BadRequestError(`Could not extract text from PDF: ${pdfErr?.message || 'Invalid PDF file'}`, 'PDF_PARSE_FAILED');
+    }
 
     // 2. Parse with Gemini
     const parsed = await parseResumeText(rawText);
@@ -219,12 +256,16 @@ export async function parseResume(resumeId: string, userId: string) {
       }
 
       if (profile) {
-        await upsertProfile(userId, {
-          headline: parsed.headline ?? undefined,
-          summary: parsed.summary ?? undefined,
-          location: parsed.location ?? undefined,
-          yearsOfExperience: parsed.yearsOfExperience ?? undefined,
-        });
+        await upsertProfile(
+          userId,
+          {
+            headline: parsed.headline ?? undefined,
+            summary: parsed.summary ?? undefined,
+            location: parsed.location ?? undefined,
+            yearsOfExperience: parsed.yearsOfExperience ?? undefined,
+          },
+          tx as any
+        );
       }
 
       return resRecord;

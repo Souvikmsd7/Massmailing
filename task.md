@@ -1,598 +1,47 @@
-# MassMailer — Phase 2 Final Hardening & Sign-Off
+# MassMailer — Phase 2 Final Fix: Migration, Tests & Verification
 
-You are working on the existing MassMailer.
+You are working on the existing `Souvikmsd7/Massmailing` repository.
 
-## OBJECTIVE
+The Phase 2 implementation has already been audited. Do **not** redesign or refactor the existing architecture.
 
-Phase 2 — Job Discovery & Ingestion has already been implemented.
+Your task is ONLY to close the remaining Phase 2 blockers and verify the repository.
 
-Your task now is to **audit, fix, test, and harden the existing Phase 2 implementation** based on the following requirements.
+## 1. FIX THE PRISMA MIGRATION — REQUIRED
 
-Do NOT start Phase 3.
+The current Prisma schema contains:
 
-Do NOT implement:
-
-- Job matching
-- pgvector
-- embeddings
-- RAG
-- resume optimization
-- auto-apply
-- Playwright
-- application tracking
-- LangChain
-- Python AI services
-- cover-letter generation
-- AI scoring
-
-Do NOT refactor unrelated MassMailer functionality.
-
-Preserve all existing Phase 1 and MassMailer features.
-
----
-
-# 1. FIX CANONICAL JOB URL DEDUPLICATION
-
-Current problem:
-
-The deduplication layer generates a normalized/canonical URL, but the `Job` database model does not persist a canonical URL and the ingestion process primarily relies on `contentHash`.
-
-This must be corrected.
-
-## Required behavior
-
-Deduplication priority must be:
-
-1. `source + sourceJobId`
-2. canonical/normalized job URL
-3. content hash
-
-Canonical URL normalization must remove tracking parameters such as:
-
-- utm_source
-- utm_medium
-- utm_campaign
-- utm_term
-- utm_content
-- fbclid
-- gclid
-
-It should also normalize:
-
-- trailing slash
-- hostname casing
-- default ports
-- URL encoding where appropriate
-
-Do NOT blindly remove legitimate query parameters that identify the actual job.
-
-## Database
-
-Add a persisted canonical URL field if necessary, for example:
-
-`canonicalJobUrl`
-
-Make the design suitable for unique lookup/deduplication.
-
-Create a proper Prisma migration.
-
-Do NOT modify existing migration history.
-
-Do NOT use `prisma db push` as a substitute for a migration.
-
-## Important
-
-Do not accidentally treat two genuinely different jobs as duplicates merely because they share a company domain.
-
-Add tests covering:
-
-- same source + same sourceJobId
-- same canonical URL
-- URL with UTM parameters
-- URL with different tracking parameters
-- different jobs with different URLs
-- same URL but changed description/content
-- content-hash duplicate
-- malformed URL handling
-
----
-
-# 2. FIX JOB INGESTION CREATED/UPDATED DETECTION
-
-The current ingestion implementation must not determine whether a job was created or updated by comparing timestamps such as:
-
-`createdAt === updatedAt`
-
-This is unreliable.
-
-Implement deterministic behavior.
-
-The ingestion result should clearly distinguish:
-
-- created
-- updated
-- duplicate
-- invalid
-- error
-
-Do not silently classify an update as a duplicate.
-
-Define the semantics clearly in code and tests.
-
-Example result:
-
-```ts
-{
-  received: 10,
-  invalid: 1,
-  duplicate: 2,
-  created: 5,
-  updated: 2,
-  errors: 0
-}
+```prisma
+canonicalJobUrl String?
 ```
 
-Update any affected types, worker logging, tests, and documentation.
+and the application already reads/writes this field.
 
----
-
-# 3. FIX FIRECRAWL JOB DISCOVERY
-
-The current Firecrawl implementation appears capable of extracting only a very limited number of jobs from a result page.
-
-The UI supports:
-
-`maxResults`
-
-but the adapter must actually respect that contract.
-
-The adapter should return:
-
-```ts
-RawJob[]
-```
-
-with potentially multiple jobs.
-
-## Required architecture
-
-Use this flow:
+However, the existing migration:
 
 ```text
-Discovery request
-      ↓
-JobSource adapter
-      ↓
-Search/results page
-      ↓
-Identify job listings/URLs
-      ↓
-Fetch/extract individual job pages when required
-      ↓
-RawJob[]
-      ↓
-Zod validation
-      ↓
-Normalization
-      ↓
-Deduplication
-      ↓
-Database
+backend/prisma/migrations/20260915000000_add_job_discovery/migration.sql
 ```
 
-Do not fake multiple jobs from a single page.
+does NOT create `canonicalJobUrl`.
 
-Do not invent job information.
+Fix this properly.
 
-Do not fabricate posting dates, companies, salaries, or skills.
+Requirements:
 
-## maxResults
-
-If:
+- Do NOT edit an already-applied migration.
+- Create a new Prisma migration, for example:
 
 ```text
-maxResults = 20
+20260917000000_add_canonical_job_url
 ```
 
-the adapter should attempt to return up to 20 actual discovered jobs.
-
-It may return fewer if the source genuinely provides fewer valid jobs.
-
-Document this behavior.
-
-## Failure behavior
-
-Do NOT swallow all Firecrawl errors and return `[]`.
-
-Distinguish:
-
-### Configuration errors
-
-Example:
-
-- missing API key
-
-These can fail clearly without retrying indefinitely.
-
-### Transient errors
-
-Examples:
-
-- timeout
-- HTTP 429
-- temporary 5xx
-- network failure
-
-These should propagate so BullMQ can retry.
-
-### Invalid source content
-
-This can be logged and skipped without causing the entire worker job to fail.
-
----
-
-# 4. FIX BULLMQ RETRY / FAILURE SEMANTICS
-
-Current worker behavior catches source failures and can allow BullMQ to consider the job successful.
-
-Fix this.
-
-Required behavior:
-
-```text
-Transient Firecrawl failure
-        ↓
-throw error
-        ↓
-BullMQ marks job failed
-        ↓
-BullMQ retry
-        ↓
-exponential backoff
-```
-
-Do not catch an error and return success unless the failure is intentionally non-retryable.
-
-The worker should preserve the distinction between:
-
-- source unavailable
-- source returned invalid jobs
-- ingestion failed
-- configuration failure
-- successful discovery
-
-## Worker requirements
-
-Verify:
-
-- attempts
-- exponential backoff
-- concurrency
-- failed jobs
-- completed jobs
-- logging
-- retry behavior
-
-Avoid creating unnecessary duplicate Queue instances.
-
-Prefer a clean structure where the queue definition is centralized and the worker consumes the same queue.
-
-Do not introduce a new queue library.
-
-Continue using BullMQ + Redis already used by MassMailer.
-
----
-
-# 5. STRICT ZOD VALIDATION FOR JOB APIs
-
-Review all Phase 2 job routes.
-
-At minimum validate:
-
-### Discovery
-
-```text
-keywords/query
-location
-maxResults/limit
-sources
-```
-
-### Job listing
-
-```text
-search
-remoteType
-employmentType
-postedWithin
-page
-limit
-```
-
-### Job ID
-
-Validate that IDs are non-empty and safely handled.
-
-Invalid enum values must return a clear `400` response rather than being silently ignored.
-
-Invalid numbers such as:
-
-```text
-page=abc
-limit=abc
-limit=-5
-limit=999999
-```
-
-must be rejected or safely constrained.
-
-Define reasonable limits.
-
-For example:
-
-```text
-page >= 1
-limit >= 1
-limit <= 100
-```
-
-Do not trust frontend validation.
-
-Backend validation is authoritative.
-
----
-
-# 6. POSTED DATE / 24-HOUR FILTERING
-
-Preserve the existing:
-
-```text
-EXACT
-APPROXIMATE
-UNKNOWN
-```
-
-confidence model.
-
-Do NOT invent exact posting timestamps.
-
-For:
-
-```text
-postedWithin=24h
-```
-
-only include jobs whose `postedAt` is usable according to the established confidence rules.
-
-Be explicit about how `APPROXIMATE` timestamps are handled.
-
-`UNKNOWN` must not incorrectly appear as a recent job.
-
-Add tests for:
-
-- exact timestamp inside 24h
-- exact timestamp outside 24h
-- approximate timestamp
-- unknown timestamp
-- 7d
-- 30d
-- future timestamp
-- null timestamp
-
-Use UTC consistently.
-
----
-
-# 7. SOURCE ADAPTER CONTRACT
-
-Review the `JobSource` interface.
-
-It should clearly define:
-
-```ts
-interface JobSource {
-  name: string
-  discoverJobs(input: JobDiscoveryInput): Promise<RawJob[]>
-}
-```
-
-Ensure the adapter does not leak provider-specific structures into the ingestion service.
-
-The ingestion service should remain source-agnostic.
-
-Do not add source-specific logic to the database layer.
-
----
-
-# 8. INGESTION PIPELINE
-
-Ensure the complete pipeline is:
-
-```text
-Raw source data
-      ↓
-RawJobSchema validation
-      ↓
-Job normalization
-      ↓
-canonical URL normalization
-      ↓
-deduplication
-      ↓
-database persistence
-```
-
-No Gemini/LLM should be required for basic job ingestion in Phase 2 unless already explicitly part of the existing implementation.
-
-Do not introduce unnecessary AI calls.
-
----
-
-# 9. SECURITY
-
-Verify:
-
-- all Career Job routes require authentication
-- users cannot access unauthorized/private data
-- external URLs are not executed server-side without explicit source-adapter logic
-- Firecrawl API key stays server-side
-- no secrets are logged
-- job URLs are validated
-- no arbitrary filesystem operations are introduced
-- no SSRF-prone generic URL fetching endpoint is exposed to users
-
-Especially ensure there is no API such as:
-
-```text
-POST /fetch-url
-```
-
-where a user can submit arbitrary internal/private URLs.
-
-The Firecrawl source adapter should control which URLs are fetched.
-
----
-
-# 10. TESTS — REQUIRED
-
-Add or improve tests.
-
-## Normalization tests
-
-Test:
-
-- React JS
-- Node JS
-- Next JS
-- Sr.
-- Jr.
-- Full Stack
-- locations
-- remote type
-- employment type
-- duplicate skills
-
-## Deduplication tests
-
-Test:
-
-- source/sourceJobId
-- canonical URL
-- UTM removal
-- tracking parameters
-- content hash
-- different jobs
-
-## API tests
-
-Test:
-
-- unauthenticated access → 401
-- authenticated access → success
-- invalid query → 400
-- invalid enum → 400
-- invalid pagination → 400
-- valid filters
-- 24h filter
-- 7d filter
-- 30d filter
-- job detail
-- nonexistent job → 404
-
-## Worker tests
-
-Mock the source adapter.
-
-Test:
-
-1. successful discovery
-2. multiple jobs
-3. source returns zero jobs
-4. invalid jobs
-5. transient source error
-6. permanent source error
-7. ingestion failure
-8. retry behavior
-9. aggregated statistics
-
-## Firecrawl adapter tests
-
-Mock Firecrawl.
-
-Do NOT make real external API calls in automated tests.
-
-Test:
-
-- API success
-- multiple job results
-- maxResults
-- timeout
-- 429
-- 500
-- malformed response
-- missing API key
-- invalid extracted job
-- posting-date extraction
-
----
-
-# 11. PHASE 1 REGRESSION
-
-Before declaring Phase 2 complete, verify that Phase 1 still works.
-
-Specifically test:
-
-- candidate profile
-- resume upload
-- resume retrieval
-- resume ownership
-- resume deletion
-- resume parsing
-- skill normalization
-- manual skill management
-
-Verify that Phase 2 changes did not expose:
-
-```text
-rawText
-storageKey
-```
-
-from resume APIs unnecessarily.
-
-Do not modify Phase 1 behavior unless required for security/regression.
-
----
-
-# 12. EXISTING MASSMAILER REGRESSION
-
-Do not break existing:
-
-- authentication
-- JWT refresh
-- campaigns
-- recipients
-- HR contacts
-- templates
-- SMTP accounts
-- SMTP rotation
-- email sending
-- follow-ups
-- tracking
-- analytics
-- dashboard
-- Docker setup
-- health endpoint
-
-Do not refactor the large existing email worker merely for code cleanliness.
-
----
-
-# 13. DATABASE VERIFICATION
-
-After making schema changes:
-
-Run:
+- Add the `canonicalJobUrl` column.
+- Add the appropriate database index/unique constraint based on the existing deduplication design.
+- Keep nullable behavior compatible with existing data.
+- Ensure the Prisma schema and migration history are consistent.
+- Do not delete or rewrite existing migrations.
+
+Then verify:
 
 ```bash
 npx prisma format
@@ -600,237 +49,324 @@ npx prisma generate
 npx prisma migrate status
 ```
 
-Verify the migration history is consistent.
-
-If a new migration is required:
-
-```bash
-npx prisma migrate dev
-```
-
-Do not modify already-committed migration SQL manually unless absolutely necessary.
-
-Verify a clean database can be initialized using:
-
-```bash
-npx prisma migrate deploy
-```
-
-Document the result.
+If a migration cannot safely be generated because of the current database state, resolve the issue without modifying historical migrations.
 
 ---
 
-# 14. BUILD / TEST VERIFICATION
+## 2. ADD FINAL DEDUPLICATION TESTS
 
-Run the actual commands supported by the repository.
+Add focused tests for the existing deduplication implementation.
 
-Backend:
+Verify:
 
-```bash
-npm install
-npm run build
-npm test
-```
+### A. Source ID deduplication
 
-Frontend:
-
-```bash
-npm install
-npm run build
-```
-
-Run frontend tests if configured.
-
-If any command fails:
-
-- investigate the real cause
-- fix it if related to Phase 2
-- do not simply suppress the failure
-- report unrelated pre-existing failures separately
-
-Do not claim success without actually running the command.
-
----
-
-# 15. CODE QUALITY
-
-Keep the current architecture.
-
-Preferred flow:
+Same:
 
 ```text
-route
- ↓
-service
- ↓
-source adapter / ingestion layer
- ↓
-Prisma
+source + sourceJobId
 ```
 
-Avoid:
+must resolve to the same Job.
 
-- business logic inside routes
-- direct Prisma calls from frontend
-- duplicate normalization implementations
-- duplicated queue definitions
-- giant new files
-- unnecessary abstractions
-- unnecessary dependencies
+### B. Canonical URL deduplication
 
-Use existing project conventions.
+These should resolve to the same canonical URL:
+
+```text
+https://example.com/jobs/123
+https://example.com/jobs/123/
+https://example.com/jobs/123?utm_source=google
+https://example.com/jobs/123?utm_source=linkedin
+```
+
+But meaningful query parameters must remain meaningful.
+
+For example, do NOT blindly remove every query parameter.
+
+### C. Content hash deduplication
+
+Equivalent normalized jobs from different sources should be detected through `contentHash`.
+
+### D. Different jobs must remain different
+
+Do not accidentally deduplicate two genuinely different URLs/jobs.
+
+### E. Idempotency
+
+Running the same `ingestJobs()` input twice must result in:
+
+```text
+first run  → created
+second run → duplicate
+```
+
+not two database records.
 
 ---
 
-# 16. README / DOCUMENTATION
+## 3. ADD FIRECRAWL TESTS
 
-Update documentation to accurately describe what Phase 2 actually supports.
+Do not make real Firecrawl API calls in tests.
 
-Document:
+Mock the HTTP layer.
 
-- JobSource abstraction
-- discovery flow
-- Firecrawl source
-- normalization
-- deduplication
-- posted-date confidence
-- BullMQ job discovery queue
-- supported filters
-- limitations
-- environment variables
+Test at minimum:
 
-Do not claim functionality that the implementation does not actually provide.
+### Successful discovery
 
-Clearly state that Phase 3 is not implemented.
+A mocked search page containing multiple job links should produce multiple `RawJob` records.
+
+Verify:
+
+```text
+maxResults = 3 → no more than 3 jobs returned
+maxResults = 10 → up to 10 valid jobs returned
+```
+
+### Invalid individual job
+
+If one job page cannot be parsed:
+
+```text
+valid jobs → retained
+invalid job → skipped
+```
+
+### HTTP 429
+
+Verify that a Firecrawl 429 produces `FirecrawlTransientError`.
+
+### HTTP 5xx
+
+Verify that a Firecrawl 5xx produces `FirecrawlTransientError`.
+
+### Timeout/network failure
+
+Verify that timeout/network failures produce `FirecrawlTransientError`.
+
+### Missing API key
+
+Verify that missing:
+
+```text
+FIRECRAWL_API_KEY
+```
+
+produces `FirecrawlConfigurationError`.
+
+Do not weaken the current error semantics just to make tests pass.
 
 ---
 
-# 17. SCOPE CONTROL
+## 4. ADD WORKER RETRY TEST
 
-Before finishing, inspect:
+Add a focused test proving the worker does not swallow transient Firecrawl failures.
+
+The expected behavior is:
+
+```text
+FirecrawlTransientError
+        ↓
+worker throws
+        ↓
+BullMQ receives failure
+        ↓
+job is eligible for retry
+```
+
+Do not require a real Redis instance if the existing test architecture allows mocking.
+
+The important assertion is that the worker handler **rejects/throws** the transient error rather than returning successful stats.
+
+---
+
+## 5. VERIFY POSTED DATE FILTERS
+
+Add or strengthen tests for:
+
+```text
+24h
+7d
+30d
+```
+
+Verify:
+
+- EXACT dates are filtered correctly.
+- APPROXIMATE dates are filtered correctly.
+- UNKNOWN dates are excluded from recent-date filtering.
+- Future posted dates are not incorrectly treated as valid recent jobs.
+
+Do not change the confidence model:
+
+```text
+EXACT
+APPROXIMATE
+UNKNOWN
+```
+
+---
+
+## 6. TIGHTEN JOB URL EXTRACTION ONLY IF NEEDED
+
+Review:
+
+```text
+isLikelyJobUrl()
+```
+
+in the Firecrawl adapter.
+
+The current heuristic allows ordinary links based only on link-text length.
+
+Improve this minimally so obvious navigation links are not treated as job postings.
+
+Do NOT attempt to build a universal web crawler.
+
+The adapter only needs to reliably handle the current Phase 2 source.
+
+---
+
+## 7. DO NOT CHANGE PHASE 1
+
+Before making changes, treat all existing Phase 1 functionality as frozen.
+
+Do NOT modify:
+
+- CandidateProfile
+- Resume upload/parsing
+- ResumeVersion
+- Skill normalization
+- CandidateSkill
+- Phase 1 APIs
+- Phase 1 authentication/authorization
+
+unless a test reveals a genuine regression caused by the Phase 2 changes.
+
+If a regression is found, fix only that regression.
+
+---
+
+## 8. DO NOT START PHASE 3
+
+Do NOT implement:
+
+- pgvector
+- embeddings
+- semantic matching
+- RAG
+- LangChain
+- resume optimization
+- job scoring
+- Playwright
+- auto-apply
+- application automation
+- cover-letter generation
+- AI job matching
+
+Phase 2 ends after job discovery, normalization, deduplication, ingestion, filtering and reliable background processing.
+
+---
+
+# FINAL VERIFICATION
+
+Run the appropriate commands for the actual repository.
+
+At minimum verify:
+
+```bash
+cd backend
+
+npm install
+npx prisma format
+npx prisma generate
+npx prisma migrate status
+npm test
+npm run build
+```
+
+Then verify the frontend:
+
+```bash
+cd ../frontend
+
+npm install
+npm test
+npm run build
+```
+
+If a test/build command does not exist, report that clearly instead of pretending it passed.
+
+Also verify:
 
 ```bash
 git status
 git diff
 ```
 
-Look for:
+Check specifically for:
 
-- secrets
-- API keys
+- secrets/API keys
 - `.env` files
-- personal resumes
-- personal contact data
-- generated files
+- personal resume files
+- generated sensitive data
 - unrelated refactors
-- accidental Phase 3 implementation
-
-Remove anything that should not be committed.
-
-Do not commit real credentials.
+- accidental Phase 3 code
 
 ---
 
-# 18. FINAL SIGN-OFF CRITERIA
+# REQUIRED FINAL REPORT
 
-You may report:
+Your final response must contain exactly these sections:
 
-`PHASE 2 STATUS: COMPLETE`
+## 1. PHASE 2 STATUS
 
-ONLY if ALL of the following are true:
-
-- canonical URL deduplication works
-- source/sourceJobId deduplication works
-- content-hash deduplication works
-- ingestion correctly distinguishes created/updated/duplicate
-- Firecrawl can return multiple real jobs
-- maxResults is respected
-- Firecrawl transient errors propagate correctly
-- BullMQ retry behavior works
-- API validation is strict
-- posted-date filtering is correct
-- authentication is enforced
-- worker tests exist
-- API tests exist
-- adapter tests exist
-- Phase 1 regression passes
-- existing MassMailer tests/build pass
-- Prisma migration is valid
-- `prisma migrate status` is clean
-- backend build passes
-- frontend build passes
-- no secrets are committed
-- no Phase 3 functionality has been implemented
-
-If ANY mandatory item fails:
-
-`PHASE 2 STATUS: NOT COMPLETE`
-
-Do not hide failures behind warnings.
-
----
-
-# FINAL RESPONSE FORMAT
-
-After implementation, provide:
-
-## Phase 2 Status
-
-`COMPLETE` or `NOT COMPLETE`
-
-## Changes Made
-
-List every meaningful change.
-
-## Tests Run
-
-Show the exact commands and their results.
-
-Example:
+Use:
 
 ```text
-npm test              PASS
-npm run build         PASS
-npx prisma generate   PASS
-npx prisma migrate status PASS
+PHASE 2 STATUS: COMPLETE
 ```
 
-## Deduplication Verification
+ONLY if all mandatory requirements above pass.
 
-Explain exactly how:
+Otherwise use:
 
 ```text
-sourceJobId
-canonical URL
-contentHash
+PHASE 2 STATUS: NOT COMPLETE
 ```
 
-are handled.
+## 2. Migration
 
-## Firecrawl Verification
+State:
 
-Explain how many real jobs can be returned and how `maxResults` works.
+- migration created
+- `canonicalJobUrl` present in database migration
+- `prisma migrate status` result
 
-## Retry Verification
+## 3. Tests
 
-Explain what happens for:
+Report the actual results for:
 
-```text
-429
-5xx
-timeout
-invalid source data
-missing API key
-```
+- deduplication
+- ingestion/idempotency
+- Firecrawl
+- worker retry
+- posted-date filtering
+- Phase 1 regression
+- existing MassMailer regression
+- frontend tests/build
+- backend tests/build
 
-## Remaining Issues
+Do not claim a test passed unless you actually ran it.
 
-List any remaining issues honestly.
+## 4. Remaining Issues
 
-## Phase Boundary
+List only genuine remaining issues.
 
-Confirm explicitly:
+## 5. Phase Boundary
 
-`Phase 3 NOT IMPLEMENTED`
+Confirm that no Phase 3 functionality was added.
 
-Do not proceed to Phase 3.
+STOP after this task.
+Do not continue into Phase 3.

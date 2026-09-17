@@ -97,17 +97,19 @@ export function normalizeSkillName(raw: string): string {
 
 /**
  * Find or create a canonical Skill record by normalized name.
+ * Accepts optional Prisma transaction client for atomic execution inside $transaction.
  */
-export async function findOrCreateSkill(rawName: string) {
+export async function findOrCreateSkill(rawName: string, tx?: PrismaTx) {
+  const db = tx ?? prisma;
   const canonical = normalizeSkillName(rawName);
   const normalizedName = canonical.toLowerCase();
 
-  let skill = await prisma.skill.findUnique({
+  let skill = await db.skill.findUnique({
     where: { normalizedName },
   });
 
   if (!skill) {
-    skill = await prisma.skill.create({
+    skill = await db.skill.create({
       data: {
         name: canonical,
         normalizedName,
@@ -117,7 +119,7 @@ export async function findOrCreateSkill(rawName: string) {
     // Seed the alias for the original raw name if different
     const aliasRaw = rawName.trim().toLowerCase();
     if (aliasRaw !== normalizedName) {
-      await prisma.skillAlias.upsert({
+      await db.skillAlias.upsert({
         where: { alias: rawName.trim() },
         update: {},
         create: { skillId: skill.id, alias: rawName.trim() },
@@ -150,7 +152,7 @@ export async function upsertCandidateSkills(
   for (const name of unique) {
     if (tx) {
       // Inside a transaction — errors must propagate to trigger rollback
-      const skill = await findOrCreateSkill(name);
+      const skill = await findOrCreateSkill(name, tx);
       await db.candidateSkill.upsert({
         where: {
           candidateId_skillId: { candidateId, skillId: skill.id },

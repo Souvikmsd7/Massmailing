@@ -197,48 +197,108 @@ function extractJobUrlsFromMarkdown(markdown: string, baseUrl: string, maxResult
 
 /**
  * Heuristic: is this URL likely an individual job posting page?
+ *
+ * Strategy:
+ *   - Reject obvious navigation/meta URLs by path prefix
+ *   - Accept URLs that contain strong job-related path segments
+ *   - For ambiguous paths, require BOTH link text to look like a job title
+ *     AND the URL to have a meaningful path depth (not just domain root)
+ *   - Never accept URLs whose only signal is short link text
  */
 function isLikelyJobUrl(url: string, linkText: string): boolean {
   try {
     const parsed = new URL(url);
     const path = parsed.pathname.toLowerCase();
 
-    // Skip obvious non-job URLs
-    if (
-      path === '/' ||
-      path.startsWith('/about') ||
-      path.startsWith('/contact') ||
-      path.startsWith('/login') ||
-      path.startsWith('/signup') ||
-      path.startsWith('/register') ||
-      path.startsWith('/blog') ||
-      path.startsWith('/press') ||
-      path.startsWith('/privacy') ||
-      path.startsWith('/terms') ||
-      path.includes('/tag/') ||
-      path.includes('/category/')
-    ) {
+    // ── Negative list: skip obvious non-job pages ──────────────────────────
+    const skipPrefixes = [
+      '/',
+      '/about',
+      '/contact',
+      '/login',
+      '/signin',
+      '/signup',
+      '/register',
+      '/logout',
+      '/blog',
+      '/press',
+      '/news',
+      '/privacy',
+      '/terms',
+      '/cookie',
+      '/faq',
+      '/help',
+      '/support',
+      '/pricing',
+      '/features',
+      '/solutions',
+      '/product',
+      '/company',
+      '/team',
+      '/culture',
+      '/diversity',
+      '/investors',
+      '/legal',
+      '/security',
+      '/accessibility',
+      '/sitemap',
+    ];
+
+    if (path === '/' || skipPrefixes.some((p) => path === p || path.startsWith(p + '/'))) {
       return false;
     }
 
-    // Positive signals: URL or text looks job-related
-    const jobIndicators = [
-      /\/job[s]?\//i,
-      /\/position[s]?\//i,
-      /\/career[s]?\//i,
-      /\/opening[s]?\//i,
-      /\/role[s]?\//i,
-      /\/vacancy/i,
-      /\/listing[s]?\//i,
+    // Skip fragment-only or query-only pseudo-URLs
+    if (path === '' || path.length < 2) return false;
+
+    // Skip obvious tag/category archive pages
+    if (path.includes('/tag/') || path.includes('/category/') || path.includes('/topic/')) {
+      return false;
+    }
+
+    // ── Strong positive signals: URL path contains job-specific segment ─────
+    const strongJobPathPatterns = [
+      /\/jobs?\//i,
+      /\/positions?\//i,
+      /\/careers?\//i,
+      /\/openings?\//i,
+      /\/roles?\//i,
+      /\/vacancies?\//i,
+      /\/listings?\//i,
       /\/apply\//i,
-      /[?&]job_id=/i,
-      /[?&]jid=/i,
+      /\/work-at\//i,
+      /\/join\//i,
+      /\/opportunities?\//i,
     ];
 
-    const urlIndicates = jobIndicators.some((p) => p.test(url));
-    const textIndicates = linkText.length > 5 && linkText.length < 200;
+    if (strongJobPathPatterns.some((p) => p.test(path))) return true;
 
-    return urlIndicates || textIndicates;
+    // Also accept if query params contain job-specific identifiers
+    const jobQueryPatterns = [/[?&]job_?id=/i, /[?&]jid=/i, /[?&]gh_jid=/i, /[?&]lever-origin=/i];
+    if (jobQueryPatterns.some((p) => p.test(url))) return true;
+
+    // ── Weak signal: URL path ends in a slug that LOOKS like a job title ────
+    // Require BOTH a meaningful path depth AND link text that looks like a job title
+    const pathDepth = path.split('/').filter(Boolean).length;
+    const lastSegment = path.split('/').filter(Boolean).pop() ?? '';
+
+    const textLooksLikeJobTitle =
+      linkText.length >= 10 &&
+      linkText.length <= 150 &&
+      // Must contain at least one word (not just numbers or special chars)
+      /[a-zA-Z]{3,}/.test(linkText) &&
+      // Should not look like a navigation label
+      !/^(home|about|contact|login|sign\s?up|sign\s?in|menu|nav|search|see\s+all|view\s+all|load\s+more|next|prev|back|more|apply|submit|confirm|cancel|close)$/i.test(
+        linkText.trim()
+      );
+
+    const pathLooksLikeJobSlug =
+      pathDepth >= 2 &&
+      lastSegment.length >= 5 &&
+      // Slug contains a mix of words (not just an ID number)
+      /[a-zA-Z]/.test(lastSegment);
+
+    return textLooksLikeJobTitle && pathLooksLikeJobSlug;
   } catch {
     return false;
   }
