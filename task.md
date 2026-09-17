@@ -1,284 +1,219 @@
-# MassMailer — Phase 2 Final Fix: Migration, Tests & Verification
+# PHASE 3 CORRECTION — REQUIRED FIXES
 
-You are working on the existing `Souvikmsd7/Massmailing` repository.
+The current Phase 3 implementation has been audited.
 
-The Phase 2 implementation has already been audited. Do **not** redesign or refactor the existing architecture.
+Do NOT rewrite Phase 3.
 
-Your task is ONLY to close the remaining Phase 2 blockers and verify the repository.
+Do NOT start Phase 4.
 
-## 1. FIX THE PRISMA MIGRATION — REQUIRED
+Make only the following targeted corrections.
 
-The current Prisma schema contains:
+## BLOCKER 1 — IMPLEMENT REAL POSTGRESQL PGVECTOR
+
+Current implementation stores embeddings as:
 
 ```prisma
-canonicalJobUrl String?
+embedding Float[]
 ```
 
-and the application already reads/writes this field.
+and calculates cosine similarity inside Node.js.
 
-However, the existing migration:
+This does NOT satisfy the Phase 3 requirement for PostgreSQL-native vector similarity.
 
-```text
-backend/prisma/migrations/20260915000000_add_job_discovery/migration.sql
+### Required
+
+Inspect the existing PostgreSQL/Docker setup.
+
+Implement pgvector properly.
+
+The database migration should:
+
+1. Enable the PostgreSQL vector extension:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-does NOT create `canonicalJobUrl`.
+2. Store embeddings in a PostgreSQL `vector(768)` column or the exact dimension returned by the configured embedding model.
 
-Fix this properly.
+3. Keep Prisma compatibility.
 
-Requirements:
+If Prisma does not natively represent the vector type in the current setup, use the appropriate unsupported/raw SQL approach rather than replacing pgvector with Float[].
 
-- Do NOT edit an already-applied migration.
-- Create a new Prisma migration, for example:
+4. Implement PostgreSQL cosine similarity using vector operators, e.g. `<=>`, rather than calculating the similarity entirely in Node.js.
 
-```text
-20260917000000_add_canonical_job_url
+5. Add an appropriate vector index if practical for the current dataset.
+
+For example, an HNSW cosine index may be appropriate:
+
+```sql
+CREATE INDEX ...
+ON ...
+USING hnsw (embedding vector_cosine_ops);
 ```
 
-- Add the `canonicalJobUrl` column.
-- Add the appropriate database index/unique constraint based on the existing deduplication design.
-- Keep nullable behavior compatible with existing data.
-- Ensure the Prisma schema and migration history are consistent.
-- Do not delete or rewrite existing migrations.
+Only use this if supported by the project's PostgreSQL/pgvector version.
 
-Then verify:
+6. Do not expose embeddings through APIs.
 
-```bash
-npx prisma format
-npx prisma generate
-npx prisma migrate status
-```
+7. Keep the existing content-hash caching behavior.
 
-If a migration cannot safely be generated because of the current database state, resolve the issue without modifying historical migrations.
+8. Do not introduce a separate vector database.
+
+9. Do not introduce LangChain.
+
+### Important
+
+The current embedding provider may return 768-dimensional embeddings.
+
+Verify the actual configured embedding dimension instead of blindly assuming it.
+
+The migration and runtime representation must agree.
 
 ---
 
-## 2. ADD FINAL DEDUPLICATION TESTS
+# BLOCKER 2 — HARD FILTER ELIGIBILITY GATE
 
-Add focused tests for the existing deduplication implementation.
-
-Verify:
-
-### A. Source ID deduplication
-
-Same:
+Current implementation calculates:
 
 ```text
-source + sourceJobId
+hardFilterScore
+skillScore
+semanticScore
+overallScore
 ```
 
-must resolve to the same Job.
+even if a hard eligibility requirement fails.
 
-### B. Canonical URL deduplication
+This can make an ineligible candidate appear to have a high overall match.
 
-These should resolve to the same canonical URL:
+Correct the matching semantics.
+
+### Required behavior
+
+Pipeline:
 
 ```text
-https://example.com/jobs/123
-https://example.com/jobs/123/
-https://example.com/jobs/123?utm_source=google
-https://example.com/jobs/123?utm_source=linkedin
+Candidate
+   ↓
+Hard Filters
+   ↓
+Eligible?
+ ┌─┴──────────┐
+NO            YES
+↓              ↓
+INELIGIBLE     Skill Matching
+               ↓
+          Semantic Matching
+               ↓
+          Overall Score
 ```
 
-But meaningful query parameters must remain meaningful.
+A failed hard filter must be clearly represented.
 
-For example, do NOT blindly remove every query parameter.
+Do not allow a high skill/semantic score to override a failed hard eligibility requirement.
 
-### C. Content hash deduplication
+You may still calculate skill/semantic diagnostics if useful, but the final match state must clearly identify the candidate as ineligible.
 
-Equivalent normalized jobs from different sources should be detected through `contentHash`.
-
-### D. Different jobs must remain different
-
-Do not accidentally deduplicate two genuinely different URLs/jobs.
-
-### E. Idempotency
-
-Running the same `ingestJobs()` input twice must result in:
+Use an explicit field if necessary, such as:
 
 ```text
-first run  → created
-second run → duplicate
+eligible
 ```
 
-not two database records.
+or a suitable match status/reason.
+
+Do NOT invent a new business rule that was not requested.
+
+Document the exact behavior.
 
 ---
 
-## 3. ADD FIRECRAWL TESTS
+# BLOCKER 3 — VERIFY SKILL ALIAS ARCHITECTURE
 
-Do not make real Firecrawl API calls in tests.
+Inspect Phase 1:
 
-Mock the HTTP layer.
-
-Test at minimum:
-
-### Successful discovery
-
-A mocked search page containing multiple job links should produce multiple `RawJob` records.
-
-Verify:
-
-```text
-maxResults = 3 → no more than 3 jobs returned
-maxResults = 10 → up to 10 valid jobs returned
-```
-
-### Invalid individual job
-
-If one job page cannot be parsed:
-
-```text
-valid jobs → retained
-invalid job → skipped
-```
-
-### HTTP 429
-
-Verify that a Firecrawl 429 produces `FirecrawlTransientError`.
-
-### HTTP 5xx
-
-Verify that a Firecrawl 5xx produces `FirecrawlTransientError`.
-
-### Timeout/network failure
-
-Verify that timeout/network failures produce `FirecrawlTransientError`.
-
-### Missing API key
-
-Verify that missing:
-
-```text
-FIRECRAWL_API_KEY
-```
-
-produces `FirecrawlConfigurationError`.
-
-Do not weaken the current error semantics just to make tests pass.
-
----
-
-## 4. ADD WORKER RETRY TEST
-
-Add a focused test proving the worker does not swallow transient Firecrawl failures.
-
-The expected behavior is:
-
-```text
-FirecrawlTransientError
-        ↓
-worker throws
-        ↓
-BullMQ receives failure
-        ↓
-job is eligible for retry
-```
-
-Do not require a real Redis instance if the existing test architecture allows mocking.
-
-The important assertion is that the worker handler **rejects/throws** the transient error rather than returning successful stats.
-
----
-
-## 5. VERIFY POSTED DATE FILTERS
-
-Add or strengthen tests for:
-
-```text
-24h
-7d
-30d
-```
-
-Verify:
-
-- EXACT dates are filtered correctly.
-- APPROXIMATE dates are filtered correctly.
-- UNKNOWN dates are excluded from recent-date filtering.
-- Future posted dates are not incorrectly treated as valid recent jobs.
-
-Do not change the confidence model:
-
-```text
-EXACT
-APPROXIMATE
-UNKNOWN
-```
-
----
-
-## 6. TIGHTEN JOB URL EXTRACTION ONLY IF NEEDED
-
-Review:
-
-```text
-isLikelyJobUrl()
-```
-
-in the Firecrawl adapter.
-
-The current heuristic allows ordinary links based only on link-text length.
-
-Improve this minimally so obvious navigation links are not treated as job postings.
-
-Do NOT attempt to build a universal web crawler.
-
-The adapter only needs to reliably handle the current Phase 2 source.
-
----
-
-## 7. DO NOT CHANGE PHASE 1
-
-Before making changes, treat all existing Phase 1 functionality as frozen.
-
-Do NOT modify:
-
-- CandidateProfile
-- Resume upload/parsing
-- ResumeVersion
-- Skill normalization
+- Skill
+- SkillAlias
 - CandidateSkill
-- Phase 1 APIs
-- Phase 1 authentication/authorization
+- normalizeSkillName()
 
-unless a test reveals a genuine regression caused by the Phase 2 changes.
+The current Phase 3 skill matcher primarily compares normalized names and does not clearly consume the SkillAlias table.
 
-If a regression is found, fix only that regression.
+Determine how SkillAlias was intended to work.
+
+If SkillAlias is database-backed canonicalization infrastructure, use it appropriately.
+
+If normalizeSkillName() is intentionally the canonical source and SkillAlias is only used during ingestion/profile normalization, document that explicitly.
+
+Do not create duplicate alias systems.
+
+Required matching behavior remains:
+
+```text
+ReactJS
+React.js
+React JS
+react
+
+→ React
+```
+
+and:
+
+```text
+Postgres
+PostgreSQL
+
+→ PostgreSQL
+```
+
+Matching must remain deterministic.
 
 ---
 
-## 8. DO NOT START PHASE 3
+# TESTS REQUIRED
 
-Do NOT implement:
+Add/update tests for:
 
-- pgvector
-- embeddings
-- semantic matching
-- RAG
-- LangChain
-- resume optimization
-- job scoring
-- Playwright
-- auto-apply
-- application automation
-- cover-letter generation
-- AI job matching
+## pgvector
 
-Phase 2 ends after job discovery, normalization, deduplication, ingestion, filtering and reliable background processing.
+- embedding stored correctly
+- embedding dimensions validated
+- cosine similarity works through PostgreSQL
+- existing embedding reused when content hash is unchanged
+- stale content causes regeneration
+- vector similarity does not leak embedding data
 
----
+## Hard filters
 
-# FINAL VERIFICATION
+Test:
 
-Run the appropriate commands for the actual repository.
+1. eligible candidate
+2. location mismatch
+3. remote mismatch
+4. salary mismatch where configured
+5. multiple failed filters
+6. ineligible candidate cannot appear as a normal eligible match
 
-At minimum verify:
+## Skill aliases
+
+Test:
+
+1. exact match
+2. canonical normalized match
+3. alias match
+4. missing skill
+5. duplicate job skills
+6. zero job skills
+
+## Regression
+
+Run:
 
 ```bash
 cd backend
 
-npm install
 npx prisma format
 npx prisma generate
 npx prisma migrate status
@@ -286,87 +221,80 @@ npm test
 npm run build
 ```
 
-Then verify the frontend:
+Then:
 
 ```bash
 cd ../frontend
 
-npm install
-npm test
+npm run lint
 npm run build
 ```
 
-If a test/build command does not exist, report that clearly instead of pretending it passed.
-
-Also verify:
-
-```bash
-git status
-git diff
-```
-
-Check specifically for:
-
-- secrets/API keys
-- `.env` files
-- personal resume files
-- generated sensitive data
-- unrelated refactors
-- accidental Phase 3 code
+Do not add a frontend testing framework if one does not already exist.
 
 ---
 
-# REQUIRED FINAL REPORT
+# DATABASE SAFETY
 
-Your final response must contain exactly these sections:
+Before changing migrations:
 
-## 1. PHASE 2 STATUS
+- inspect existing migrations
+- do not modify already-applied migration files
+- create a new migration
+- preserve Phase 1 and Phase 2 migrations
 
-Use:
+Verify:
 
-```text
-PHASE 2 STATUS: COMPLETE
+```bash
+npx prisma migrate status
 ```
 
-ONLY if all mandatory requirements above pass.
+Do not use `prisma db push` as a substitute for the production migration.
 
-Otherwise use:
+---
+
+# PHASE BOUNDARY
+
+DO NOT implement:
+
+- auto apply
+- Playwright
+- RAG
+- LangChain
+- resume optimization
+- cover letters
+- recruiter outreach
+- application submission
+
+---
+
+# FINAL REPORT
+
+Do not claim Phase 3 complete unless all three corrections are implemented and verified.
+
+Report:
 
 ```text
-PHASE 2 STATUS: NOT COMPLETE
+PHASE 3 CORRECTION STATUS: COMPLETE
 ```
 
-## 2. Migration
+only when:
 
-State:
+- real pgvector is implemented
+- PostgreSQL vector similarity works
+- hard eligibility is correctly enforced
+- skill alias architecture is verified
+- tests pass
+- backend build passes
+- Prisma migration status is clean
+- frontend lint/build passes
 
-- migration created
-- `canonicalJobUrl` present in database migration
-- `prisma migrate status` result
+Otherwise report:
 
-## 3. Tests
+```text
+PHASE 3 CORRECTION STATUS: BLOCKED
+```
 
-Report the actual results for:
+with the exact remaining blocker.
 
-- deduplication
-- ingestion/idempotency
-- Firecrawl
-- worker retry
-- posted-date filtering
-- Phase 1 regression
-- existing MassMailer regression
-- frontend tests/build
-- backend tests/build
-
-Do not claim a test passed unless you actually ran it.
-
-## 4. Remaining Issues
-
-List only genuine remaining issues.
-
-## 5. Phase Boundary
-
-Confirm that no Phase 3 functionality was added.
-
-STOP after this task.
-Do not continue into Phase 3.
+Do not modify unrelated MassMailer functionality.

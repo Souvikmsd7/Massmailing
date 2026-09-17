@@ -460,14 +460,15 @@ model JobMatch {
 }
 
 model Embedding {
-  id          String   @id @default(uuid())
-  entityType  String   // "CANDIDATE" | "JOB"
-  entityId    String   // candidateProfileId or jobId
+  id          String                      @id @default(uuid())
+  entityType  String                      // "CANDIDATE" | "JOB"
+  entityId    String                      // candidateProfileId or jobId
   embedding   Float[]
-  model       String   // e.g. "text-embedding-004"
+  vector      Unsupported("vector(768)")?
+  model       String                      // e.g. "text-embedding-004"
   contentHash String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
 
   @@unique([entityType, entityId])
   @@index([entityType, entityId])

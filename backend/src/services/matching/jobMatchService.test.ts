@@ -9,6 +9,7 @@ describe('JobMatchService Integration', () => {
   let userId: string;
   let candidateProfileId: string;
   let jobId: string;
+  let ineligibleJobId: string;
 
   beforeAll(async () => {
     // Create test user
@@ -29,7 +30,7 @@ describe('JobMatchService Integration', () => {
         summary: 'Experienced with React, Node.js, TypeScript',
         location: 'New York, NY',
         remotePreference: 'remote',
-        salaryMin: 100000,
+        salaryMin: 150000,
       },
     });
     candidateProfileId = profile.id;
@@ -54,7 +55,7 @@ describe('JobMatchService Integration', () => {
       skipDuplicates: true,
     });
 
-    // Create test job
+    // Create eligible test job
     const job = await prisma.job.create({
       data: {
         title: 'Senior React & Node Engineer',
@@ -67,24 +68,45 @@ describe('JobMatchService Integration', () => {
         normalizedLocation: 'new york, ny',
         remoteType: 'REMOTE',
         employmentType: 'FULL_TIME',
-        salaryMin: 120000,
-        salaryMax: 160000,
+        salaryMin: 160000,
+        salaryMax: 200000,
         contentHash: `hash-${Date.now()}`,
         skills: ['React', 'Node.js', 'TypeScript'],
       },
     });
     jobId = job.id;
+
+    // Create ineligible test job (onsite in London vs New York remote + salary max below min)
+    const ineligJob = await prisma.job.create({
+      data: {
+        title: 'Onsite Developer London',
+        normalizedTitle: 'onsite developer london',
+        company: 'LondonCorp',
+        jobUrl: `https://example.com/jobs/inelig-${Date.now()}`,
+        source: 'manual',
+        sourceJobId: `job-inelig-${Date.now()}`,
+        location: 'London, UK',
+        normalizedLocation: 'london, uk',
+        remoteType: 'ONSITE',
+        employmentType: 'FULL_TIME',
+        salaryMin: 50000,
+        salaryMax: 80000, // < 150,000 candidate min
+        contentHash: `hash-inelig-${Date.now()}`,
+        skills: ['React', 'Node.js'],
+      },
+    });
+    ineligibleJobId = ineligJob.id;
   });
 
   afterAll(async () => {
     await prisma.jobMatch.deleteMany({ where: { candidateProfileId } }).catch(() => {});
     await prisma.candidateSkill.deleteMany({ where: { candidateId: candidateProfileId } }).catch(() => {});
     await prisma.candidateProfile.delete({ where: { id: candidateProfileId } }).catch(() => {});
-    await prisma.job.delete({ where: { id: jobId } }).catch(() => {});
+    await prisma.job.deleteMany({ where: { OR: [{ id: jobId }, { id: ineligibleJobId }] } }).catch(() => {});
     await prisma.user.delete({ where: { id: userId } }).catch(() => {});
   });
 
-  it('calculates job match deterministically and persists JobMatch record', async () => {
+  it('calculates job match deterministically for eligible candidate', async () => {
     const match = await calculateJobMatch(candidateProfileId, jobId, { forceRecalculate: true });
 
     expect(match).toBeDefined();
@@ -92,8 +114,19 @@ describe('JobMatchService Integration', () => {
     expect(match.jobId).toBe(jobId);
     expect(match.status).toBe('READY');
     expect(match.hardFilterScore).toBe(100);
-    expect(match.skillScore).toBe(67); // 2 matched / 3 required = 66.6 -> 67
+    expect(match.skillScore).toBe(67);
     expect(match.overallScore).toBeGreaterThan(0);
-    expect(match.explanation).toBeDefined();
+  });
+
+  it('enforces Hard Filter Eligibility Gate: sets overallScore to 0 and status FAILED when hard filter fails', async () => {
+    const match = await calculateJobMatch(candidateProfileId, ineligibleJobId, { forceRecalculate: true });
+
+    expect(match).toBeDefined();
+    expect(match.candidateProfileId).toBe(candidateProfileId);
+    expect(match.jobId).toBe(ineligibleJobId);
+    expect(match.status).toBe('FAILED');
+    expect(match.overallScore).toBe(0); // Gated to 0
+    expect((match.hardFilterResults as any).eligible).toBe(false);
+    expect((match.hardFilterResults as any).failedFilters).toContain('salary');
   });
 });

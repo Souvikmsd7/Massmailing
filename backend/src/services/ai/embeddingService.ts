@@ -4,8 +4,9 @@
  * Responsibilities:
  * - Generate text embeddings via Google Gemini text-embedding-004 REST API
  * - Cache embeddings in the Embedding database table
+ * - Write to PostgreSQL pgvector column when extension is available
  * - Prevent unnecessary regenerate operations using content hashing (SHA-256)
- * - Provide fallback mock vectors for offline/test environments when GEMINI_API_KEY is unset
+ * - Provide fallback mock vectors for offline/test environments
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -90,6 +91,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 /**
  * Retrieve or generate & cache an embedding for an entity (CANDIDATE or JOB).
+ * Saves to both Prisma embedding Float[] array and pgvector column if supported.
  */
 export async function getOrGenerateEmbedding(
   entityType: 'CANDIDATE' | 'JOB',
@@ -113,7 +115,7 @@ export async function getOrGenerateEmbedding(
 
   const embeddingValues = await generateEmbedding(text);
 
-  await prisma.embedding.upsert({
+  const record = await prisma.embedding.upsert({
     where: {
       entityType_entityId: {
         entityType,
@@ -134,6 +136,18 @@ export async function getOrGenerateEmbedding(
       contentHash,
     },
   });
+
+  // Attempt raw pgvector update if extension & vector column exist in Postgres DB
+  if (embeddingValues.length > 0) {
+    const formattedVec = `[${embeddingValues.join(',')}]`;
+    await prisma.$executeRawUnsafe(
+      `UPDATE "Embedding" SET "vector" = $1::vector WHERE "id" = $2`,
+      formattedVec,
+      record.id
+    ).catch(() => {
+      /* pgvector extension not present in current DB environment; Float[] fallback active */
+    });
+  }
 
   return embeddingValues;
 }

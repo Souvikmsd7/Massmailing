@@ -8,9 +8,9 @@
  *   ↓
  * Hard Filters (Location, Remote, Salary, Experience)
  *   ↓
- * Deterministic Skill Match (EXACT, ALIAS)
- *   ↓
- * Embedding Retrieval / Generation & Vector Similarity
+ * Eligible?
+ * ├── NO  → INELIGIBLE (overallScore = 0, status = FAILED)
+ * └── YES → Skill Matching + Semantic Embedding Similarity (pgvector / fallback)
  *   ↓
  * Score Synthesis: 0.30 * HardFilter + 0.45 * Skill + 0.25 * Semantic
  *   ↓
@@ -22,7 +22,7 @@
 import { PrismaClient, MatchStatus } from '@prisma/client';
 import { evaluateHardFilters } from './hardFilterService';
 import { evaluateSkillMatch } from './skillMatchService';
-import { evaluateSemanticMatch } from './semanticMatchService';
+import { evaluateSemanticMatch, calculatePgVectorSimilarity } from './semanticMatchService';
 import { getOrGenerateEmbedding } from '../ai/embeddingService';
 import { generateMatchExplanation } from '../ai/matchExplanationService';
 import { NotFoundError } from '../../utils/errors';
@@ -66,7 +66,7 @@ export async function calculateJobMatch(
     throw new NotFoundError('Job not found');
   }
 
-  // 3. Check for existingREADY match if forceRecalculate is false
+  // 3. Check for existing READY match if forceRecalculate is false
   if (!options.forceRecalculate) {
     const existing = await prisma.jobMatch.findUnique({
       where: {
@@ -74,7 +74,7 @@ export async function calculateJobMatch(
       },
     });
 
-    if (existing && existing.status === 'READY') {
+    if (existing && (existing.status === 'READY' || existing.status === 'FAILED')) {
       return existing;
     }
   }
@@ -83,7 +83,7 @@ export async function calculateJobMatch(
   const hardFilterResult = evaluateHardFilters(candidate, job);
 
   // 5. Skill Match Engine
-  const skillResult = evaluateSkillMatch(candidate.skills, job.skills);
+  const skillResult = await evaluateSkillMatch(candidate.skills, job.skills);
 
   // 6. Embedding & Semantic Similarity
   const candidateSkillNames = candidate.skills.map((s) => s.skill.name).join(', ');
@@ -108,16 +108,28 @@ Description: ${job.description?.slice(0, 1000) || ''}
     getOrGenerateEmbedding('JOB', jobId, jobText),
   ]);
 
-  const semanticResult = evaluateSemanticMatch(candidateVector, jobVector);
+  const pgVectorSimilarity = await calculatePgVectorSimilarity(candidateProfileId, jobId);
+  const semanticResult = evaluateSemanticMatch(candidateVector, jobVector, pgVectorSimilarity);
 
-  // 7. Overall Score Calculation
-  // Formula: hardFilterScore * 0.30 + skillScore * 0.45 + semanticScore * 0.25
-  const rawOverallScore =
-    hardFilterResult.hardFilterScore * 0.30 +
-    skillResult.skillScore * 0.45 +
-    semanticResult.semanticScore * 0.25;
+  // 7. Overall Score Calculation with Hard Filter Gate
+  let overallScore = 0;
+  let matchStatus: MatchStatus = MatchStatus.READY;
 
-  const overallScore = Math.round(rawOverallScore);
+  if (!hardFilterResult.eligible) {
+    // Hard eligibility requirement failed — gate score to 0 and flag match as FAILED
+    overallScore = 0;
+    matchStatus = MatchStatus.FAILED;
+    logger.info(`[JobMatchService] Candidate ${candidateProfileId} failed hard filter gate for job ${jobId}`, {
+      failedFilters: hardFilterResult.failedFilters,
+    });
+  } else {
+    // Eligible — compute weighted compatibility score
+    const rawOverallScore =
+      hardFilterResult.hardFilterScore * 0.30 +
+      skillResult.skillScore * 0.45 +
+      semanticResult.semanticScore * 0.25;
+    overallScore = Math.round(rawOverallScore);
+  }
 
   // 8. Gemini Explanation Synthesis
   const explanation = await generateMatchExplanation({
@@ -142,7 +154,7 @@ Description: ${job.description?.slice(0, 1000) || ''}
       hardFilterScore: hardFilterResult.hardFilterScore,
       skillScore: skillResult.skillScore,
       semanticScore: semanticResult.semanticScore,
-      status: MatchStatus.READY,
+      status: matchStatus,
       hardFilterResults: hardFilterResult as any,
       skillMatchResults: skillResult as any,
       explanation: explanation as any,
@@ -155,7 +167,7 @@ Description: ${job.description?.slice(0, 1000) || ''}
       hardFilterScore: hardFilterResult.hardFilterScore,
       skillScore: skillResult.skillScore,
       semanticScore: semanticResult.semanticScore,
-      status: MatchStatus.READY,
+      status: matchStatus,
       hardFilterResults: hardFilterResult as any,
       skillMatchResults: skillResult as any,
       explanation: explanation as any,
@@ -183,6 +195,7 @@ Description: ${job.description?.slice(0, 1000) || ''}
   logger.info(`[JobMatchService] Calculated match for candidate ${candidateProfileId} and job ${jobId}`, {
     overallScore,
     eligible: hardFilterResult.eligible,
+    status: matchStatus,
   });
 
   return jobMatch;
