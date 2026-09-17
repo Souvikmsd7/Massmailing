@@ -60,9 +60,10 @@ ALTER TABLE "JobMatch" ADD CONSTRAINT "JobMatch_jobId_fkey" FOREIGN KEY ("jobId"
 CREATE UNIQUE INDEX IF NOT EXISTS "Embedding_entityType_entityId_key" ON "Embedding"("entityType", "entityId");
 CREATE INDEX IF NOT EXISTS "Embedding_entityType_entityId_idx" ON "Embedding"("entityType", "entityId");
 
+-- Ensure vector column exists if Embedding table was created previously without vector type
+ALTER TABLE "Embedding" ADD COLUMN IF NOT EXISTS "vector" vector(768);
+
 -- Create HNSW Cosine Index for pgvector
-DO $$ BEGIN
-  CREATE INDEX IF NOT EXISTS "Embedding_vector_cosine_idx" ON "Embedding" USING hnsw (vector vector_cosine_ops);
-EXCEPTION
-  WHEN OTHERS THEN null;
-END $$;
+CREATE INDEX IF NOT EXISTS "Embedding_vector_cosine_idx" ON "Embedding" USING hnsw (vector vector_cosine_ops);
+
+

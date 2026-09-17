@@ -43,6 +43,8 @@ export async function calculatePgVectorSimilarity(
   candidateId: string,
   jobId: string
 ): Promise<number | null> {
+  const enablePgVector = process.env.ENABLE_PGVECTOR !== 'false';
+
   try {
     const result = await prisma.$queryRawUnsafe<Array<{ similarity: number }>>(`
       SELECT 1 - (e1.vector <=> e2.vector) AS similarity
@@ -56,11 +58,23 @@ export async function calculatePgVectorSimilarity(
     if (result && result.length > 0 && typeof result[0].similarity === 'number') {
       return result[0].similarity;
     }
-  } catch {
-    /* pgvector operator unavailable or vectors null in DB; fall back to in-memory calculation */
+
+    if (enablePgVector) {
+      const msg = `pgvector similarity query returned no valid vector record for candidateId=${candidateId} and jobId=${jobId}`;
+      logger.error(`[SemanticMatchService] ${msg}`);
+      throw new Error(msg);
+    }
+  } catch (err) {
+    if (enablePgVector) {
+      logger.error('[SemanticMatchService] PostgreSQL pgvector similarity query failed', { candidateId, jobId }, err as Error);
+      throw err instanceof Error ? err : new Error(String(err));
+    } else {
+      logger.warn('[SemanticMatchService] pgvector query failed; ENABLE_PGVECTOR=false fallback active');
+    }
   }
   return null;
 }
+
 
 export function evaluateSemanticMatch(
   candidateVector: number[],

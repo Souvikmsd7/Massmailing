@@ -137,17 +137,26 @@ export async function getOrGenerateEmbedding(
     },
   });
 
-  // Attempt raw pgvector update if extension & vector column exist in Postgres DB
+  // Update pgvector column if vector exists
   if (embeddingValues.length > 0) {
+    const enablePgVector = process.env.ENABLE_PGVECTOR !== 'false';
     const formattedVec = `[${embeddingValues.join(',')}]`;
-    await prisma.$executeRawUnsafe(
-      `UPDATE "Embedding" SET "vector" = $1::vector WHERE "id" = $2`,
-      formattedVec,
-      record.id
-    ).catch(() => {
-      /* pgvector extension not present in current DB environment; Float[] fallback active */
-    });
+    try {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Embedding" SET "vector" = $1::vector WHERE "id" = $2`,
+        formattedVec,
+        record.id
+      );
+    } catch (err) {
+      if (enablePgVector) {
+        logger.error('[EmbeddingService] Failed to write pgvector vector column', { recordId: record.id }, err as Error);
+        throw new Error(`pgvector write failed for embedding record ${record.id}: ${(err as Error).message}`);
+      } else {
+        logger.warn('[EmbeddingService] pgvector write failed; ENABLE_PGVECTOR=false fallback active', { recordId: record.id });
+      }
+    }
   }
 
   return embeddingValues;
 }
+

@@ -48,12 +48,15 @@ export async function evaluateSkillMatch(
   }
 
   // Load database SkillAlias table entries associated with candidate skills
-  const dbAliases = await prisma.skillAlias.findMany({
-    where: {
-      skillId: { in: Array.from(candidateSkillIds) },
-    },
-    include: { skill: true },
-  }).catch(() => []);
+  const dbAliases = candidateSkillIds.size > 0
+    ? await prisma.skillAlias.findMany({
+        where: {
+          skillId: { in: Array.from(candidateSkillIds) },
+        },
+        include: { skill: true },
+      })
+    : [];
+
 
   const aliasMap = new Map<string, string>(); // aliasLower -> canonical skill name
   for (const aliasRecord of dbAliases) {
