@@ -32,6 +32,7 @@ jest.mock('bullmq', () => ({
 }));
 
 import { ingestJobs } from '../services/jobs/jobIngestionService';
+import { processDiscoveryJob } from './jobDiscoveryWorker';
 
 const mockIngestJobs = ingestJobs as jest.MockedFunction<typeof ingestJobs>;
 
@@ -43,63 +44,6 @@ const mockAdapter = {
   discoverJobs: mockDiscoverJobs,
 };
 
-// ─── Simulated Worker Processor ───────────────────────────────────────────────
-// We test the worker's business logic by extracting and calling the processor
-// function directly, without needing a real BullMQ Worker instance.
-
-interface DiscoveryJobData {
-  input: { keywords: string; location?: string; maxResults?: number };
-  sources?: string[];
-}
-
-interface IngestionStats {
-  received: number;
-  invalid: number;
-  duplicate: number;
-  created: number;
-  updated: number;
-  errors: number;
-}
-
-/**
- * Simulate the worker processor logic extracted from jobDiscoveryWorker.ts.
- * This mirrors the actual implementation for unit testing purposes.
- */
-async function runWorkerProcessor(
-  jobData: DiscoveryJobData,
-  adapters: Record<string, { name: string; discoverJobs: (input: any) => Promise<any[]> }>
-): Promise<IngestionStats> {
-  const { input, sources = ['firecrawl'] } = jobData;
-
-  const aggregatedStats: IngestionStats = {
-    received: 0,
-    invalid: 0,
-    duplicate: 0,
-    created: 0,
-    updated: 0,
-    errors: 0,
-  };
-
-  for (const sourceName of sources) {
-    const adapter = adapters[sourceName];
-    if (!adapter) continue;
-
-    // This mirrors the worker's error handling
-    const rawJobs = await adapter.discoverJobs(input); // Will throw on transient/config errors
-
-    const stats = await ingestJobs(rawJobs);
-
-    aggregatedStats.received += stats.received;
-    aggregatedStats.invalid += stats.invalid;
-    aggregatedStats.duplicate += stats.duplicate;
-    aggregatedStats.created += stats.created;
-    aggregatedStats.updated += stats.updated ?? 0;
-    aggregatedStats.errors += stats.errors;
-  }
-
-  return aggregatedStats;
-}
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('JobDiscoveryWorker — processing logic', () => {
@@ -109,7 +53,7 @@ describe('JobDiscoveryWorker — processing logic', () => {
 
   const adapters = { firecrawl: mockAdapter } as any;
 
-  const defaultStats: IngestionStats = {
+  const defaultStats = {
     received: 0,
     invalid: 0,
     duplicate: 0,
@@ -125,7 +69,7 @@ describe('JobDiscoveryWorker — processing logic', () => {
     mockDiscoverJobs.mockResolvedValueOnce(rawJobs);
     mockIngestJobs.mockResolvedValueOnce({ ...defaultStats, received: 1, created: 1 });
 
-    const result = await runWorkerProcessor(
+    const result = await processDiscoveryJob(
       { input: { keywords: 'React developer' }, sources: ['firecrawl'] },
       adapters
     );
@@ -146,7 +90,7 @@ describe('JobDiscoveryWorker — processing logic', () => {
     mockDiscoverJobs.mockResolvedValueOnce(rawJobs);
     mockIngestJobs.mockResolvedValueOnce({ ...defaultStats, received: 5, created: 4, duplicate: 1 });
 
-    const result = await runWorkerProcessor(
+    const result = await processDiscoveryJob(
       { input: { keywords: 'engineer' }, sources: ['firecrawl'] },
       adapters
     );
@@ -160,7 +104,7 @@ describe('JobDiscoveryWorker — processing logic', () => {
     mockDiscoverJobs.mockResolvedValueOnce([]);
     mockIngestJobs.mockResolvedValueOnce({ ...defaultStats });
 
-    const result = await runWorkerProcessor(
+    const result = await processDiscoveryJob(
       { input: { keywords: 'obscure role' }, sources: ['firecrawl'] },
       adapters
     );
@@ -175,7 +119,7 @@ describe('JobDiscoveryWorker — processing logic', () => {
     mockDiscoverJobs.mockResolvedValueOnce(rawJobs);
     mockIngestJobs.mockResolvedValueOnce({ ...defaultStats, received: 1, invalid: 1 });
 
-    const result = await runWorkerProcessor(
+    const result = await processDiscoveryJob(
       { input: { keywords: 'engineer' }, sources: ['firecrawl'] },
       adapters
     );
@@ -190,7 +134,7 @@ describe('JobDiscoveryWorker — processing logic', () => {
     );
 
     await expect(
-      runWorkerProcessor(
+      processDiscoveryJob(
         { input: { keywords: 'engineer' }, sources: ['firecrawl'] },
         adapters
       )
@@ -206,7 +150,7 @@ describe('JobDiscoveryWorker — processing logic', () => {
     );
 
     await expect(
-      runWorkerProcessor(
+      processDiscoveryJob(
         { input: { keywords: 'engineer' }, sources: ['firecrawl'] },
         adapters
       )
@@ -215,21 +159,34 @@ describe('JobDiscoveryWorker — processing logic', () => {
     expect(mockIngestJobs).not.toHaveBeenCalled();
   });
 
-  it('7. ingestion failure — propagates error', async () => {
+  it('7. ingestion database exception — propagates error', async () => {
     const rawJobs = [{ title: 'E', company: 'C', jobUrl: 'https://c.com/1', source: 'firecrawl' }];
     mockDiscoverJobs.mockResolvedValueOnce(rawJobs);
     mockIngestJobs.mockRejectedValueOnce(new Error('Database connection lost'));
 
     await expect(
-      runWorkerProcessor(
+      processDiscoveryJob(
         { input: { keywords: 'engineer' }, sources: ['firecrawl'] },
         adapters
       )
     ).rejects.toThrow('Database connection lost');
   });
 
-  it('8. unknown source name — skips gracefully without error', async () => {
-    const result = await runWorkerProcessor(
+  it('8. ingestion stats containing persistence errors — throws error to fail BullMQ job', async () => {
+    const rawJobs = [{ title: 'E', company: 'C', jobUrl: 'https://c.com/1', source: 'firecrawl' }];
+    mockDiscoverJobs.mockResolvedValueOnce(rawJobs);
+    mockIngestJobs.mockResolvedValueOnce({ ...defaultStats, received: 1, errors: 1 });
+
+    await expect(
+      processDiscoveryJob(
+        { input: { keywords: 'engineer' }, sources: ['firecrawl'] },
+        adapters
+      )
+    ).rejects.toThrow('Job ingestion completed with 1 persistence error(s)');
+  });
+
+  it('9. unknown source name — skips gracefully without error', async () => {
+    const result = await processDiscoveryJob(
       { input: { keywords: 'engineer' }, sources: ['nonexistent-source'] },
       adapters
     );
@@ -238,7 +195,7 @@ describe('JobDiscoveryWorker — processing logic', () => {
     expect(mockDiscoverJobs).not.toHaveBeenCalled();
   });
 
-  it('9. aggregated stats — multiple sources summed correctly', async () => {
+  it('10. aggregated stats — multiple sources summed correctly', async () => {
     const mockAdapter2 = { name: 'source2', discoverJobs: jest.fn() };
     const multiAdapters = { source1: mockAdapter, source2: mockAdapter2 } as any;
 
@@ -248,7 +205,7 @@ describe('JobDiscoveryWorker — processing logic', () => {
       .mockResolvedValueOnce({ ...defaultStats, received: 3, created: 2, duplicate: 1 })
       .mockResolvedValueOnce({ ...defaultStats, received: 5, created: 3, updated: 2 });
 
-    const result = await runWorkerProcessor(
+    const result = await processDiscoveryJob(
       { input: { keywords: 'engineer' }, sources: ['source1', 'source2'] },
       multiAdapters
     );

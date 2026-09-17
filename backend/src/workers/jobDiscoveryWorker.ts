@@ -42,6 +42,92 @@ const adapters: Record<string, JobSource> = {
   firecrawl: new FirecrawlAdapter(),
 };
 
+/**
+ * Process a discovery job request.
+ * Extracted as a pure testable function for unit tests and worker processing.
+ */
+export async function processDiscoveryJob(
+  jobData: DiscoveryJobData,
+  customAdapters: Record<string, JobSource> = adapters
+): Promise<IngestionStats> {
+  const { input, sources = ['firecrawl'] } = jobData;
+  const logContext = {
+    keywords: input.keywords,
+    location: input.location,
+    sources,
+  };
+
+  logger.info('[JobDiscoveryWorker] Processing discovery job', logContext);
+
+  const aggregatedStats: IngestionStats = {
+    received: 0,
+    invalid: 0,
+    duplicate: 0,
+    created: 0,
+    updated: 0,
+    errors: 0,
+  };
+
+  for (const sourceName of sources) {
+    const adapter = customAdapters[sourceName];
+    if (!adapter) {
+      logger.warn(`[JobDiscoveryWorker] Source adapter "${sourceName}" not registered`, logContext);
+      continue;
+    }
+
+    logger.info(`[JobDiscoveryWorker] Fetching jobs from ${adapter.name}`, logContext);
+
+    // Note: do NOT catch transient errors here — let them propagate so BullMQ can retry.
+    // Configuration errors are also propagated — there is no benefit in retrying them, but
+    // BullMQ will mark the job failed so operators can see the problem.
+    let rawJobs;
+    try {
+      rawJobs = await adapter.discoverJobs(input);
+    } catch (err) {
+      if (err instanceof FirecrawlConfigurationError) {
+        // Non-retryable config error — log clearly and propagate
+        logger.error(
+          `[JobDiscoveryWorker] Configuration error in source ${sourceName} — operator action required`,
+          logContext,
+          err
+        );
+      } else {
+        // Transient error — propagate to trigger BullMQ retry
+        logger.warn(
+          `[JobDiscoveryWorker] Transient error in source ${sourceName} — will retry`,
+          logContext
+        );
+      }
+      throw err; // Always rethrow — BullMQ handles retry decisions
+    }
+
+    logger.info(`[JobDiscoveryWorker] ${adapter.name} returned ${rawJobs.length} raw jobs`, logContext);
+
+    // Ingestion failures are propagated — they are likely transient (DB issues)
+    const stats = await ingestJobs(rawJobs);
+
+    aggregatedStats.received += stats.received;
+    aggregatedStats.invalid += stats.invalid;
+    aggregatedStats.duplicate += stats.duplicate;
+    aggregatedStats.created += stats.created;
+    aggregatedStats.updated += stats.updated;
+    aggregatedStats.errors += stats.errors;
+  }
+
+  if (aggregatedStats.errors > 0) {
+    throw new Error(
+      `Job ingestion completed with ${aggregatedStats.errors} persistence error(s)`
+    );
+  }
+
+  logger.info('[JobDiscoveryWorker] Discovery job completed', {
+    ...logContext,
+    stats: aggregatedStats,
+  });
+
+  return aggregatedStats;
+}
+
 let worker: Worker | null = null;
 
 export function startJobDiscoveryWorker(): void {
@@ -50,78 +136,7 @@ export function startJobDiscoveryWorker(): void {
   worker = new Worker<DiscoveryJobData>(
     'job-discovery',
     async (job: Job<DiscoveryJobData>) => {
-      const { input, sources = ['firecrawl'] } = job.data;
-      const logContext = {
-        jobId: job.id,
-        keywords: input.keywords,
-        location: input.location,
-        sources,
-        attempt: job.attemptsMade + 1,
-      };
-
-      logger.info('[JobDiscoveryWorker] Processing discovery job', logContext);
-
-      const aggregatedStats: IngestionStats = {
-        received: 0,
-        invalid: 0,
-        duplicate: 0,
-        created: 0,
-        updated: 0,
-        errors: 0,
-      };
-
-      for (const sourceName of sources) {
-        const adapter = adapters[sourceName];
-        if (!adapter) {
-          logger.warn(`[JobDiscoveryWorker] Source adapter "${sourceName}" not registered`, logContext);
-          continue;
-        }
-
-        logger.info(`[JobDiscoveryWorker] Fetching jobs from ${adapter.name}`, logContext);
-
-        // Note: do NOT catch transient errors here — let them propagate so BullMQ can retry.
-        // Configuration errors are also propagated — there is no benefit in retrying them, but
-        // BullMQ will mark the job failed so operators can see the problem.
-        let rawJobs;
-        try {
-          rawJobs = await adapter.discoverJobs(input);
-        } catch (err) {
-          if (err instanceof FirecrawlConfigurationError) {
-            // Non-retryable config error — log clearly and propagate
-            logger.error(
-              `[JobDiscoveryWorker] Configuration error in source ${sourceName} — operator action required`,
-              logContext,
-              err
-            );
-          } else {
-            // Transient error — propagate to trigger BullMQ retry
-            logger.warn(
-              `[JobDiscoveryWorker] Transient error in source ${sourceName} — will retry`,
-              logContext
-            );
-          }
-          throw err; // Always rethrow — BullMQ handles retry decisions
-        }
-
-        logger.info(`[JobDiscoveryWorker] ${adapter.name} returned ${rawJobs.length} raw jobs`, logContext);
-
-        // Ingestion failures are propagated — they are likely transient (DB issues)
-        const stats = await ingestJobs(rawJobs);
-
-        aggregatedStats.received += stats.received;
-        aggregatedStats.invalid += stats.invalid;
-        aggregatedStats.duplicate += stats.duplicate;
-        aggregatedStats.created += stats.created;
-        aggregatedStats.updated += stats.updated;
-        aggregatedStats.errors += stats.errors;
-      }
-
-      logger.info('[JobDiscoveryWorker] Discovery job completed', {
-        ...logContext,
-        stats: aggregatedStats,
-      });
-
-      return aggregatedStats;
+      return processDiscoveryJob(job.data);
     },
     {
       connection: createRedisConnection(),
