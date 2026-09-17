@@ -249,6 +249,7 @@ model CandidateProfile {
   updatedAt          DateTime         @updatedAt
   resumes            Resume[]
   skills             CandidateSkill[]
+  matches            JobMatch[]
 
   @@index([userId])
 }
@@ -376,6 +377,7 @@ model Job {
   skills             String[]
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
+  matches            JobMatch[]
 
   @@unique([source, sourceJobId])
   @@index([canonicalJobUrl])
@@ -417,3 +419,57 @@ enum JobStatus {
   EXPIRED
   DUPLICATE
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Job Matching Engine — Phase 3
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum MatchStatus {
+  CALCULATING
+  READY
+  FAILED
+  STALE
+}
+
+model JobMatch {
+  id                 String           @id @default(uuid())
+  candidateProfileId String
+  candidate          CandidateProfile @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+  jobId              String
+  job                Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  overallScore       Float            // 0 - 100
+  hardFilterScore    Float            // 0 - 100
+  skillScore         Float            // 0 - 100
+  semanticScore      Float            // 0 - 100
+
+  status             MatchStatus      @default(CALCULATING)
+
+  hardFilterResults  Json?
+  skillMatchResults Json?
+  explanation        Json?
+
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@unique([candidateProfileId, jobId])
+  @@index([candidateProfileId])
+  @@index([jobId])
+  @@index([status])
+  @@index([overallScore])
+}
+
+model Embedding {
+  id          String   @id @default(uuid())
+  entityType  String   // "CANDIDATE" | "JOB"
+  entityId    String   // candidateProfileId or jobId
+  embedding   Float[]
+  model       String   // e.g. "text-embedding-004"
+  contentHash String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([entityType, entityId])
+  @@index([entityType, entityId])
+}
+

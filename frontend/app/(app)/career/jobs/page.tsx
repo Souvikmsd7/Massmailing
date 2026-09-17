@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { listJobs, discoverJobs } from '@/lib/career/jobsApi';
+import { calculateMatch, listMatches, JobMatchRecord } from '@/lib/career/matchesApi';
 import { Job } from '@/lib/types';
 import { showToast } from '@/lib/swal';
 import {
@@ -20,6 +21,7 @@ import {
   AlertCircle,
   HelpCircle,
   Send,
+  Target,
 } from 'lucide-react';
 
 export default function JobsPage() {
@@ -42,6 +44,11 @@ export default function JobsPage() {
   const [discLimit, setDiscLimit] = useState(20);
   const [discovering, setDiscovering] = useState(false);
 
+  // Job Match State
+  const [matchMap, setMatchMap] = useState<Record<string, JobMatchRecord>>({});
+  const [matchingJobId, setMatchingJobId] = useState<string | null>(null);
+  const [selectedMatchModal, setSelectedMatchModal] = useState<JobMatchRecord | null>(null);
+
   const fetchJobsList = useCallback(() => {
     setLoading(true);
     listJobs({
@@ -59,11 +66,36 @@ export default function JobsPage() {
       })
       .catch(() => showToast('error', 'Failed to fetch jobs'))
       .finally(() => setLoading(false));
+
+    // Load existing matches for quick badge rendering
+    listMatches({ limit: 100 })
+      .then((res) => {
+        const map: Record<string, JobMatchRecord> = {};
+        for (const m of res.matches) {
+          map[m.jobId] = m;
+        }
+        setMatchMap(map);
+      })
+      .catch(() => {});
   }, [search, remoteType, employmentType, postedWithin, page]);
 
   useEffect(() => {
     fetchJobsList();
   }, [fetchJobsList]);
+
+  const handleMatchClick = async (jobId: string) => {
+    setMatchingJobId(jobId);
+    try {
+      const match = await calculateMatch(jobId, true);
+      setMatchMap((prev) => ({ ...prev, [jobId]: match }));
+      setSelectedMatchModal(match);
+      showToast('success', `Calculated compatibility score: ${match.overallScore}%`);
+    } catch (err: any) {
+      showToast('error', err?.response?.data?.error?.message || 'Failed to match job');
+    } finally {
+      setMatchingJobId(null);
+    }
+  };
 
   const handleTriggerDiscovery = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,7 +110,6 @@ export default function JobsPage() {
       });
       showToast('success', res.message || 'Discovery task queued in background!');
       setShowDiscover(false);
-      // Wait briefly then refresh
       setTimeout(fetchJobsList, 2000);
     } catch (err: any) {
       showToast('error', err?.response?.data?.error?.message || 'Failed to trigger discovery');
@@ -128,13 +159,16 @@ export default function JobsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-white font-outfit flex items-center gap-2">
-            <Briefcase className="text-indigo-400" size={26} /> Job Discovery & Ingestion
+            <Briefcase className="text-indigo-400" size={26} /> Job Discovery & Matching Engine
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Browse ingested jobs with automatic deduplication, skill extraction & confidence tracking
+            Browse jobs, match candidate skills, and generate AI compatibility explanations
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/career/matches" className="btn btn-ghost btn-sm flex items-center gap-2 text-indigo-400">
+            <Target size={15} /> My Matches
+          </Link>
           <button
             onClick={() => setShowDiscover(!showDiscover)}
             className="btn btn-primary flex items-center gap-2"
@@ -211,9 +245,6 @@ export default function JobsPage() {
               </div>
             </div>
           </form>
-          <p className="text-[11px] text-slate-400 italic">
-            Background workers scrape job boards, validate schema, normalize titles/locations, deduplicate, and store jobs in DB.
-          </p>
         </div>
       )}
 
@@ -234,7 +265,6 @@ export default function JobsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          {/* Remote Filter */}
           <select
             value={remoteType}
             onChange={(e) => {
@@ -249,7 +279,6 @@ export default function JobsPage() {
             <option value="ONSITE">Onsite</option>
           </select>
 
-          {/* Employment Filter */}
           <select
             value={employmentType}
             onChange={(e) => {
@@ -265,7 +294,6 @@ export default function JobsPage() {
             <option value="PART_TIME">Part Time</option>
           </select>
 
-          {/* Recency Filter */}
           <select
             value={postedWithin}
             onChange={(e) => {
@@ -304,72 +332,101 @@ export default function JobsPage() {
             <span>Page {page} of {totalPages}</span>
           </div>
 
-          {jobs.map((job) => (
-            <div
-              key={job.id}
-              className="card hover:border-slate-700 transition-all duration-200 group flex flex-col md:flex-row md:items-center justify-between gap-4 p-5"
-            >
-              <div className="space-y-2 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link
-                    href={`/career/jobs/${job.id}`}
-                    className="font-bold text-lg text-white hover:text-indigo-400 transition-colors font-outfit"
-                  >
-                    {job.normalizedTitle}
-                  </Link>
-                  {getRemoteBadge(job.remoteType)}
-                  {job.employmentType !== 'UNKNOWN' && (
-                    <span className="badge badge-slate text-[11px] uppercase">
-                      {job.employmentType.replace('_', ' ')}
-                    </span>
-                  )}
-                  {getConfidenceBadge(job.postedAtConfidence, job.postedAt)}
-                </div>
+          {jobs.map((job) => {
+            const existingMatch = matchMap[job.id];
+            const isMatching = matchingJobId === job.id;
 
-                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
-                  <span className="font-semibold text-slate-200">{job.company}</span>
-                  {job.normalizedLocation && (
-                    <span className="flex items-center gap-1">
-                      <MapPin size={13} className="text-slate-500" /> {job.normalizedLocation}
-                    </span>
-                  )}
-                  <span className="flex items-center gap-1 text-slate-500">
-                    <Globe size={13} /> Source: {job.source}
-                  </span>
-                </div>
+            return (
+              <div
+                key={job.id}
+                className="card hover:border-slate-700 transition-all duration-200 group flex flex-col md:flex-row md:items-center justify-between gap-4 p-5"
+              >
+                <div className="space-y-2 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/career/jobs/${job.id}`}
+                      className="font-bold text-lg text-white hover:text-indigo-400 transition-colors font-outfit"
+                    >
+                      {job.normalizedTitle}
+                    </Link>
 
-                {job.skills && job.skills.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {job.skills.map((skill) => (
-                      <span
-                        key={skill}
-                        className="text-[11px] px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300 font-medium"
+                    {/* Match Score Badge */}
+                    {existingMatch && (
+                      <button
+                        onClick={() => setSelectedMatchModal(existingMatch)}
+                        className={`inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full font-bold border transition-all ${
+                          existingMatch.overallScore >= 80
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                            : existingMatch.overallScore >= 60
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
+                            : 'bg-slate-800 text-slate-400 border-slate-700'
+                        }`}
                       >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
+                        <Target size={11} /> Match: {existingMatch.overallScore}%
+                      </button>
+                    )}
 
-              <div className="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800/80">
-                <Link
-                  href={`/career/jobs/${job.id}`}
-                  className="btn btn-ghost btn-sm text-xs flex items-center gap-1.5"
-                >
-                  View Detail
-                </Link>
-                <a
-                  href={job.jobUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-primary btn-sm text-xs flex items-center gap-1.5"
-                >
-                  Apply <ExternalLink size={12} />
-                </a>
+                    {getRemoteBadge(job.remoteType)}
+                    {job.employmentType !== 'UNKNOWN' && (
+                      <span className="badge badge-slate text-[11px] uppercase">
+                        {job.employmentType.replace('_', ' ')}
+                      </span>
+                    )}
+                    {getConfidenceBadge(job.postedAtConfidence, job.postedAt)}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
+                    <span className="font-semibold text-slate-200">{job.company}</span>
+                    {job.normalizedLocation && (
+                      <span className="flex items-center gap-1">
+                        <MapPin size={13} className="text-slate-500" /> {job.normalizedLocation}
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1 text-slate-500">
+                      <Globe size={13} /> Source: {job.source}
+                    </span>
+                  </div>
+
+                  {job.skills && job.skills.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {job.skills.map((skill) => (
+                        <span
+                          key={skill}
+                          className="text-[11px] px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300 font-medium"
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800/80">
+                  <button
+                    onClick={() => handleMatchClick(job.id)}
+                    disabled={isMatching}
+                    className="btn btn-secondary btn-sm text-xs flex items-center gap-1.5"
+                  >
+                    {isMatching ? (
+                      <Loader2 size={13} className="animate-spin text-indigo-400" />
+                    ) : (
+                      <Target size={13} className="text-indigo-400" />
+                    )}
+                    {isMatching ? 'Matching…' : existingMatch ? 'Re-Match' : 'Match Me'}
+                  </button>
+
+                  <a
+                    href={job.jobUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-primary btn-sm text-xs flex items-center gap-1.5"
+                  >
+                    Apply <ExternalLink size={12} />
+                  </a>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Pagination */}
           {totalPages > 1 && (
@@ -395,6 +452,95 @@ export default function JobsPage() {
           )}
         </div>
       )}
+
+      {/* Match Details Modal */}
+      {selectedMatchModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-6 border-indigo-500/30">
+            <div className="flex items-start justify-between">
+              <div>
+                <span className="inline-block px-3 py-1 text-xs font-bold rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 mb-2">
+                  Match Score: {selectedMatchModal.overallScore}%
+                </span>
+                <h2 className="text-xl font-extrabold text-white font-outfit">
+                  Match Breakdown
+                </h2>
+              </div>
+              <button
+                onClick={() => setSelectedMatchModal(null)}
+                className="text-slate-400 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800 text-center">
+              <div>
+                <div className="text-xs text-slate-400">Hard Filters</div>
+                <div className="text-lg font-extrabold text-indigo-400">
+                  {selectedMatchModal.hardFilterScore}%
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-400">Skill Score</div>
+                <div className="text-lg font-extrabold text-emerald-400">
+                  {selectedMatchModal.skillScore}%
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-400">Semantic Similarity</div>
+                <div className="text-lg font-extrabold text-purple-400">
+                  {selectedMatchModal.semanticScore}%
+                </div>
+              </div>
+            </div>
+
+            {selectedMatchModal.explanation && (
+              <div className="bg-indigo-950/30 border border-indigo-500/20 p-4 rounded-xl space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+                  <Sparkles size={14} /> AI Match Explanation
+                </h4>
+                <p className="text-xs text-slate-200 leading-relaxed">
+                  {selectedMatchModal.explanation.summary}
+                </p>
+
+                {selectedMatchModal.explanation.strengths?.length > 0 && (
+                  <div>
+                    <span className="text-[11px] font-semibold text-emerald-400 block mb-1">
+                      Key Strengths:
+                    </span>
+                    <ul className="list-disc list-inside text-xs text-slate-300 space-y-0.5">
+                      {selectedMatchModal.explanation.strengths.map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {selectedMatchModal.explanation.gaps?.length > 0 && (
+                  <div>
+                    <span className="text-[11px] font-semibold text-amber-400 block mb-1">
+                      Skill Gaps:
+                    </span>
+                    <ul className="list-disc list-inside text-xs text-slate-300 space-y-0.5">
+                      {selectedMatchModal.explanation.gaps.map((g, i) => (
+                        <li key={i}>{g}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button onClick={() => setSelectedMatchModal(null)} className="btn btn-ghost btn-sm">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
