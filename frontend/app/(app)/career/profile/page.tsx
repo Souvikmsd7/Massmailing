@@ -16,7 +16,6 @@ import {
   FolderGit2,
   ExternalLink,
   ArrowRight,
-  Eye
 } from 'lucide-react';
 
 const remoteOptions = [

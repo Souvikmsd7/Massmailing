@@ -18,8 +18,9 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-    } catch (err: any) {
-      setError(err?.response?.data?.error || 'Login failed. Please verify your credentials.');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
+      setError(apiErr?.response?.data?.error || 'Login failed. Please verify your credentials.');
     } finally {
       setLoading(false);
     }

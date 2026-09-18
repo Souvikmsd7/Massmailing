@@ -24,7 +24,7 @@ export async function deleteResume(id: string): Promise<void> {
   await api.delete(`/api/career/resumes/${id}`);
 }
 
-export async function parseResume(id: string): Promise<{ resume: ResumeListItem; parsed: any }> {
+export async function parseResume(id: string): Promise<{ resume: ResumeListItem; parsed: unknown }> {
   const res = await api.post(`/api/career/resumes/${id}/parse`);
   return res.data.data;
 }

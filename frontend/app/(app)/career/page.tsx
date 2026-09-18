@@ -6,10 +6,9 @@ import { getProfile } from '@/lib/career/candidateApi';
 import { listResumes } from '@/lib/career/resumeApi';
 import { getSkills } from '@/lib/career/skillsApi';
 import { CandidateProfile, ResumeListItem, CandidateSkill } from '@/lib/types';
-import SkillBadge from '@/components/career/SkillBadge';
 import {
   BrainCircuit, FileText, User, Sparkles, CheckCircle2, AlertCircle,
-  Clock, XCircle, ArrowRight, Plus, Upload
+  Clock, XCircle, ArrowRight, Upload
 } from 'lucide-react';
 import { showToast } from '@/lib/swal';
 

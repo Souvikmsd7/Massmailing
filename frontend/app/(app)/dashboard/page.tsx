@@ -6,7 +6,7 @@ import api from '@/lib/api';
 import { DashboardStats, Campaign } from '@/lib/types';
 import StatusBadge from '@/components/StatusBadge';
 import {
-  Send, Users, CheckCircle2, XCircle, Clock, TrendingUp, Plus, ArrowRight, Zap, Eye, Sparkles, BarChart3
+  Send, Users, CheckCircle2, XCircle, Clock, TrendingUp, Plus, ArrowRight, Zap, Sparkles, BarChart3
 } from 'lucide-react';
 import { showToast } from '@/lib/swal';
 

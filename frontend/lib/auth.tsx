@@ -28,6 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem('mm_user');
     if (stored) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       try { setUser(JSON.parse(stored)); } catch { /* ignore */ }
     }
     // Verify token is still valid
@@ -44,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (pathname !== '/login') router.push('/login');
       })
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = async (email: string, password: string) => {

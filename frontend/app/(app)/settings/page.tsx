@@ -52,10 +52,6 @@ export default function SettingsPage() {
   });
   const [testingSmtp, setTestingSmtp] = useState(false);
 
-  useEffect(() => {
-    fetchSettingsAndSmtp();
-  }, []);
-
   const fetchSettingsAndSmtp = async () => {
     try {
       setLoading(true);
@@ -72,6 +68,11 @@ export default function SettingsPage() {
     }
   };
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchSettingsAndSmtp();
+  }, []);
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -81,8 +82,9 @@ export default function SettingsPage() {
       });
       setSettings(res.data.settings);
       showToast('success', 'Settings saved successfully!');
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error || 'Failed to save settings');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
+      showToast('error', apiErr?.response?.data?.error || 'Failed to save settings');
     } finally {
       setSaving(false);
     }
@@ -128,8 +130,9 @@ export default function SettingsPage() {
       setTestingSmtp(true);
       const res = await api.post('/api/smtp-accounts/test', smtpForm);
       showToast('success', res.data.message || 'SMTP Connection Test Succeeded!');
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error || 'SMTP Connection Failed');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
+      showToast('error', apiErr?.response?.data?.error || 'SMTP Connection Failed');
     } finally {
       setTestingSmtp(false);
     }
@@ -147,8 +150,9 @@ export default function SettingsPage() {
       }
       setShowSmtpModal(false);
       fetchSettingsAndSmtp();
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error || 'Failed to save SMTP account');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
+      showToast('error', apiErr?.response?.data?.error || 'Failed to save SMTP account');
     }
   };
 

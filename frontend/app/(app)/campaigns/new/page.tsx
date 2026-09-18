@@ -6,11 +6,10 @@ import api from '@/lib/api';
 import { Contact } from '@/lib/types';
 import { showToast } from '@/lib/swal';
 import {
-  Upload, Users, PenSquare, Eye, CheckCircle2, X, Plus, Trash2,
-  FileText, AlertCircle, Info, ChevronLeft, ChevronRight, Send,
-  Variable, Paperclip, Download, UserCheck, Search, Sparkles, Clock, Calendar
+  Upload, Users, PenSquare, Eye, CheckCircle2, X, Trash2,
+  AlertCircle, Info, ChevronLeft, ChevronRight, Send,
+  Paperclip, Download, UserCheck, Search, Sparkles, Clock, Calendar
 } from 'lucide-react';
-import Papa from 'papaparse';
 
 type Step = 'recipients' | 'compose' | 'preview' | 'confirm';
 
@@ -34,9 +33,8 @@ export default function NewCampaignPage() {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvMapping, setCsvMapping] = useState<Record<string, string>>({});
   const [csvFilePath, setCsvFilePath] = useState('');
-  const [csvRawData, setCsvRawData] = useState<Contact[]>([]);
-  const [invalidRows, setInvalidRows] = useState<any[]>([]);
-  const [duplicates, setDuplicates] = useState<any[]>([]);
+  const [invalidRows, setInvalidRows] = useState<{ email?: string; row?: number }[]>([]);
+  const [duplicates, setDuplicates] = useState<{ email?: string }[]>([]);
   const [inputMode, setInputMode] = useState<'csv' | 'manual'>('csv');
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvMappingStep, setCsvMappingStep] = useState(false);
@@ -44,7 +42,7 @@ export default function NewCampaignPage() {
 
   // HR Directory Modal state
   const [showHRModal, setShowHRModal] = useState(false);
-  const [hrContactsList, setHrContactsList] = useState<any[]>([]);
+  const [hrContactsList, setHrContactsList] = useState<{ id: string; name: string; company?: string; email: string; phone?: string; location?: string }[]>([]);
   const [hrSearch, setHrSearch] = useState('');
   const [selectedHRIds, setSelectedHRIds] = useState<string[]>([]);
   const [loadingHR, setLoadingHR] = useState(false);
@@ -85,7 +83,7 @@ Best regards,
   const [previewLoading, setPreviewLoading] = useState(false);
 
   // Saved Templates state
-  const [userTemplates, setUserTemplates] = useState<any[]>([]);
+  const [userTemplates, setUserTemplates] = useState<{ id: string; name: string; subject: string; body: string }[]>([]);
 
   // AI Pitch Generator state
   const [showAIModal, setShowAIModal] = useState(false);
@@ -100,6 +98,7 @@ Best regards,
     if (saved) {
       try {
         const tpl = JSON.parse(saved);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (tpl.subject) setSubject(tpl.subject);
         if (tpl.body) setBody(tpl.body);
         showToast('info', `Loaded template "${tpl.name}"`);
@@ -198,8 +197,9 @@ Best regards,
         phone: auto.phone || '',
         linkedin: auto.linkedin || '',
       });
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error || 'Failed to upload CSV');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
+      showToast('error', apiErr?.response?.data?.error || 'Failed to upload CSV');
     } finally {
       setCsvUploading(false);
     }
@@ -222,8 +222,9 @@ Best regards,
       if (res.data.contacts.length > 0) {
         showToast('success', `Imported ${res.data.contacts.length} valid contacts`);
       }
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error || 'Failed to parse CSV');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
+      showToast('error', apiErr?.response?.data?.error || 'Failed to parse CSV');
     }
   };
 
@@ -240,7 +241,7 @@ Best regards,
         return;
       }
       setHrContactsList(list);
-      setSelectedHRIds(list.map((c: any) => c.id));
+      setSelectedHRIds(list.map((c: { id: string }) => c.id));
     } catch {
       showToast('error', 'Failed to load HR contacts');
       setShowHRModal(false);
@@ -371,8 +372,9 @@ Best regards,
       }
 
       router.push(`/campaigns/${campaignId}`);
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error || 'Failed to create campaign');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
+      showToast('error', apiErr?.response?.data?.error || 'Failed to create campaign');
     } finally {
       setSubmitting(false);
     }
@@ -870,7 +872,7 @@ Best regards,
                     />
                   </div>
                   <div className="form-group">
-                    <label className="label">Follow-Up Subject (Leave blank to use 'Re: ' + original subject)</label>
+                    <label className="label">Follow-Up Subject (Leave blank to use &apos;Re: &apos; + original subject)</label>
                     <input
                       type="text"
                       value={followUpSubject}
@@ -1102,7 +1104,7 @@ Best regards,
                   </p>
                   <p className="text-sm text-amber-300/80">
                     Each recruiter will receive a <strong>separate, personalized email</strong>.
-                    No recruiter will see another's email address.
+                     No recruiter will see another&apos;s email address.
                     {sendOption === 'schedule'
                       ? ' You can modify or cancel the schedule anytime before execution.'
                       : ' This action cannot be undone once started.'}
@@ -1350,7 +1352,7 @@ Best regards,
                 <label className="label">Email Tone</label>
                 <select
                   value={aiTone}
-                  onChange={(e) => setAiTone(e.target.value as any)}
+                  onChange={(e) => setAiTone(e.target.value as 'professional' | 'friendly' | 'persuasive' | 'confident')}
                   className="input text-xs"
                 >
                   <option value="professional">Professional & Formal</option>

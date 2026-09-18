@@ -38,8 +38,9 @@ export default function ResumePage() {
       await uploadResume(file);
       showToast('success', 'Resume uploaded successfully!');
       refresh();
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error?.message || 'Upload failed');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: { message?: string } } } };
+      showToast('error', apiErr?.response?.data?.error?.message || 'Upload failed');
     } finally {
       setUploading(false);
     }
@@ -66,8 +67,9 @@ export default function ResumePage() {
         showToast('error', 'Parsing failed — Gemini could not process the resume');
       }
       refresh();
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error?.message || 'Parse failed');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: { message?: string } } } };
+      showToast('error', apiErr?.response?.data?.error?.message || 'Parse failed');
     } finally {
       setParsing(null);
     }

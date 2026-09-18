@@ -13,13 +13,8 @@ import {
   Save,
   Loader2,
   Search,
-  Filter,
-  CheckCircle2,
   Eye,
   EyeOff,
-  Globe,
-  Code2,
-  Sparkles
 } from 'lucide-react';
 
 export default function ToolsProjectsPage() {
@@ -85,7 +80,7 @@ export default function ToolsProjectsPage() {
     setTools((prev) => [newItem, ...prev]);
   };
 
-  const updateTool = (index: number, field: keyof ToolItem, value: any) => {
+  const updateTool = (index: number, field: keyof ToolItem, value: string | boolean) => {
     setTools((prev) => prev.map((t, i) => (i === index ? { ...t, [field]: value } : t)));
   };
 
@@ -105,7 +100,7 @@ export default function ToolsProjectsPage() {
     setProjects((prev) => [newItem, ...prev]);
   };
 
-  const updateProject = (index: number, field: keyof ProjectItem, value: any) => {
+  const updateProject = (index: number, field: keyof ProjectItem, value: string | boolean) => {
     setProjects((prev) => prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)));
   };
 
@@ -256,7 +251,7 @@ export default function ToolsProjectsPage() {
 
           <select
             value={filterSync}
-            onChange={(e) => setFilterSync(e.target.value as any)}
+            onChange={(e) => setFilterSync(e.target.value as 'all' | 'profile' | 'personal')}
             className="input py-1.5 px-2 text-xs"
           >
             <option value="all">All Records</option>
@@ -295,7 +290,7 @@ export default function ToolsProjectsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
-              {filteredTools.map((tool, idx) => {
+              {filteredTools.map((tool) => {
                 // Find actual index in state array
                 const realIndex = tools.findIndex((t) => (t.id && t.id === tool.id) || t === tool);
                 const isSynced = tool.includeInProfile ?? false;
@@ -416,7 +411,7 @@ export default function ToolsProjectsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
-              {filteredProjects.map((project, idx) => {
+              {filteredProjects.map((project) => {
                 const realIndex = projects.findIndex((p) => (p.id && p.id === project.id) || p === project);
                 const isSynced = project.includeInProfile ?? false;
 

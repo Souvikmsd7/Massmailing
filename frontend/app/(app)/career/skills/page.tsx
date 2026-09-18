@@ -32,8 +32,9 @@ export default function SkillsPage() {
       setSkills(updated);
       setNewSkill('');
       showToast('success', `Added "${name}"`);
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error?.message || 'Failed to add skill');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: { message?: string } } } };
+      showToast('error', apiErr?.response?.data?.error?.message || 'Failed to add skill');
     } finally {
       setAdding(false);
     }

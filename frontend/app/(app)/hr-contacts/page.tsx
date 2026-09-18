@@ -16,12 +16,9 @@ import {
   Building2,
   Mail,
   Phone,
-  FileText,
   X,
-  Check,
   ChevronLeft,
   ChevronRight,
-  Filter,
   RefreshCw
 } from 'lucide-react';
 
@@ -78,15 +75,18 @@ export default function HRContactsPage() {
       setContacts(res.data.contacts);
       setTotalPages(res.data.pagination.totalPages);
       setTotalCount(res.data.pagination.total);
-    } catch (err: any) {
-      showToast('error', err.response?.data?.error || 'Failed to load contacts');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
+      showToast('error', apiErr.response?.data?.error || 'Failed to load contacts');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, search]);
 
   const handleOpenAdd = () => {
@@ -126,10 +126,11 @@ export default function HRContactsPage() {
       }
       setShowAddModal(false);
       fetchContacts();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
       showAlert({
         title: 'Error',
-        text: err.response?.data?.error || 'Failed to save contact',
+        text: apiErr.response?.data?.error || 'Failed to save contact',
         icon: 'error',
       });
     } finally {
@@ -150,9 +151,10 @@ export default function HRContactsPage() {
         await api.delete(`/api/hr-contacts/${id}`);
         showToast('success', 'Contact deleted');
         fetchContacts();
-      } catch (err: any) {
-        showToast('error', err.response?.data?.error || 'Failed to delete contact');
-      }
+      } catch (err: unknown) {
+          const apiErr = err as { response?: { data?: { error?: string } } };
+          showToast('error', apiErr.response?.data?.error || 'Failed to delete contact');
+        }
     }
   };
 
@@ -172,9 +174,10 @@ export default function HRContactsPage() {
         showToast('success', `${res.data.deletedCount} contact(s) deleted`);
         setSelectedIds([]);
         fetchContacts();
-      } catch (err: any) {
-        showToast('error', err.response?.data?.error || 'Failed to bulk delete contacts');
-      }
+      } catch (err: unknown) {
+          const apiErr = err as { response?: { data?: { error?: string } } };
+          showToast('error', apiErr.response?.data?.error || 'Failed to bulk delete contacts');
+        }
     }
   };
 
@@ -249,10 +252,11 @@ export default function HRContactsPage() {
       setShowImportModal(false);
       setImportFile(null);
       fetchContacts();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
       showAlert({
         title: 'Import Failed',
-        text: err.response?.data?.error || 'Failed to process CSV file',
+        text: apiErr.response?.data?.error || 'Failed to process CSV file',
         icon: 'error',
       });
     } finally {

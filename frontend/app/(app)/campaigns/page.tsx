@@ -17,6 +17,7 @@ export default function CampaignsPage() {
   const limit = 20;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     api.get(`/api/campaigns?page=${page}&limit=${limit}`)
       .then((res) => {
@@ -146,10 +147,10 @@ export default function CampaignsPage() {
                       <td className="text-xs font-mono">
                         <div className="flex items-center gap-2">
                           <span className="text-emerald-400 flex items-center gap-1">
-                            <Eye size={12} /> {(c as any).openedCount || 0}
+                            <Eye size={12} /> {(c as { openedCount?: number }).openedCount || 0}
                           </span>
                           <span className="text-cyan-400 flex items-center gap-1">
-                            <MousePointer size={12} /> {(c as any).clickedCount || 0}
+                            <MousePointer size={12} /> {(c as { clickedCount?: number }).clickedCount || 0}
                           </span>
                         </div>
                       </td>

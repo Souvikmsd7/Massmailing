@@ -18,7 +18,6 @@ import {
   HelpCircle,
   Building2,
   DollarSign,
-  Calendar,
   Sparkles,
 } from 'lucide-react';
 
@@ -42,6 +41,7 @@ export default function JobDetailPage({ params }: { params?: { id?: string } }) 
   }, [jobId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchDetail();
   }, [fetchDetail]);
 
@@ -130,7 +130,7 @@ export default function JobDetailPage({ params }: { params?: { id?: string } }) 
 
             {job.title !== job.normalizedTitle && (
               <p className="text-xs text-slate-400">
-                Original Title: <span className="italic text-slate-300">"{job.title}"</span>
+                Original Title: <span className="italic text-slate-300">&ldquo;{job.title}&rdquo;</span>
               </p>
             )}
 

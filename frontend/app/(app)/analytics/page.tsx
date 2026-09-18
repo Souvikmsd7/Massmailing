@@ -5,16 +5,11 @@ import api from '@/lib/api';
 import { showToast } from '@/lib/swal';
 import {
   TrendingUp,
-  Mail,
   Eye,
   MousePointer,
   Award,
   BarChart3,
-  Download,
-  Calendar,
   Send,
-  CheckCircle2,
-  AlertCircle,
   FileSpreadsheet,
 } from 'lucide-react';
 
@@ -57,10 +52,6 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'sent' | 'opens' | 'clicks'>('opens');
 
-  useEffect(() => {
-    fetchAnalytics();
-  }, []);
-
   const fetchAnalytics = async () => {
     try {
       setLoading(true);
@@ -74,6 +65,11 @@ export default function AnalyticsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchAnalytics();
+  }, []);
 
   const handleExportCSV = () => {
     if (!campaigns.length) return;
@@ -216,7 +212,7 @@ export default function AnalyticsPage() {
 
         {/* Visual Bar Chart */}
         <div className="h-48 flex items-end gap-2 pt-6 pb-2 px-2 border-b border-slate-800/80">
-          {trends.map((t, idx) => {
+          {trends.map((t) => {
             const val = t[activeTab];
             const heightPercent = maxTrendVal > 0 ? (val / maxTrendVal) * 100 : 0;
             const formattedDate = new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });

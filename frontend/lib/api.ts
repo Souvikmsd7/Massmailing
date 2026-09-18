@@ -9,9 +9,9 @@ const api = axios.create({
 });
 
 let isRefreshing = false;
-let failedQueue: Array<{ resolve: (token: string) => void; reject: (error: any) => void }> = [];
+let failedQueue: Array<{ resolve: (token: string) => void; reject: (error: unknown) => void }> = [];
 
-const processQueue = (error: any, token: string | null = null) => {
+const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue.forEach((prom) => {
     if (error) {
       prom.reject(error);
@@ -53,7 +53,7 @@ api.interceptors.response.use(
               originalRequest.headers.Authorization = `Bearer ${token}`;
               resolve(api(originalRequest));
             },
-            reject: (err: any) => {
+            reject: (err: unknown) => {
               reject(err);
             },
           });
@@ -90,6 +90,7 @@ api.interceptors.response.use(
           localStorage.removeItem('mm_refresh_token');
           localStorage.removeItem('mm_user');
           if (window.location.pathname !== '/login') {
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
             window.location.href = '/login';
           }
         }

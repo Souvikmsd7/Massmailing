@@ -45,6 +45,7 @@ export default function CampaignDetailPage() {
   }, [id]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadCampaign();
 
     const token = localStorage.getItem('mm_token');
@@ -139,7 +140,7 @@ export default function CampaignDetailPage() {
     };
   }, [id, loadCampaign]);
 
-  const action = async (endpoint: string, successMsg: string, body?: any) => {
+  const action = async (endpoint: string, successMsg: string, body?: Record<string, unknown>) => {
     setActionLoading(true);
     try {
       if (body) {
@@ -149,8 +150,9 @@ export default function CampaignDetailPage() {
       }
       showToast('success', successMsg);
       await loadCampaign();
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error || 'Action failed');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
+      showToast('error', apiErr?.response?.data?.error || 'Action failed');
     } finally {
       setActionLoading(false);
     }
@@ -174,8 +176,9 @@ export default function CampaignDetailPage() {
       showToast('success', `Rescheduled for ${targetDate.toLocaleString()}`);
       setShowRescheduleModal(false);
       await loadCampaign();
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error || 'Failed to reschedule campaign');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
+      showToast('error', apiErr?.response?.data?.error || 'Failed to reschedule campaign');
     } finally {
       setRescheduling(false);
     }

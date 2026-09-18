@@ -11,12 +11,10 @@ import {
   Search,
   MapPin,
   Globe,
-  Clock,
   Sparkles,
   ExternalLink,
   RefreshCw,
   Loader2,
-  Filter,
   CheckCircle2,
   AlertCircle,
   HelpCircle,
@@ -80,6 +78,7 @@ export default function JobsPage() {
   }, [search, remoteType, employmentType, postedWithin, page]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchJobsList();
   }, [fetchJobsList]);
 
@@ -90,8 +89,9 @@ export default function JobsPage() {
       setMatchMap((prev) => ({ ...prev, [jobId]: match }));
       setSelectedMatchModal(match);
       showToast('success', `Calculated compatibility score: ${match.overallScore}%`);
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error?.message || 'Failed to match job');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: { message?: string } } } };
+      showToast('error', apiErr?.response?.data?.error?.message || 'Failed to match job');
     } finally {
       setMatchingJobId(null);
     }
@@ -111,8 +111,9 @@ export default function JobsPage() {
       showToast('success', res.message || 'Discovery task queued in background!');
       setShowDiscover(false);
       setTimeout(fetchJobsList, 2000);
-    } catch (err: any) {
-      showToast('error', err?.response?.data?.error?.message || 'Failed to trigger discovery');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: { message?: string } } } };
+      showToast('error', apiErr?.response?.data?.error?.message || 'Failed to trigger discovery');
     } finally {
       setDiscovering(false);
     }
@@ -322,7 +323,7 @@ export default function JobsPage() {
           </div>
           <h3 className="text-base font-bold text-white font-outfit">No jobs found</h3>
           <p className="text-slate-400 text-sm mt-1 max-w-md mx-auto">
-            Try adjusting your search filters or click "Run Discovery" above to discover jobs from external sources.
+            Try adjusting your search filters or click &ldquo;Run Discovery&rdquo; above to discover jobs from external sources.
           </p>
         </div>
       ) : (

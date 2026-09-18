@@ -14,7 +14,6 @@ import {
   Send,
   X,
   RefreshCw,
-  Copy,
   Variable,
   BookOpen
 } from 'lucide-react';
@@ -49,7 +48,9 @@ export default function TemplatesPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTemplates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
   const handleOpenAdd = () => {
@@ -97,10 +98,11 @@ Best regards,
       }
       setShowModal(false);
       fetchTemplates();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { error?: string } } };
       showAlert({
         title: 'Error',
-        text: err.response?.data?.error || 'Failed to save template',
+        text: apiErr.response?.data?.error || 'Failed to save template',
         icon: 'error',
       });
     } finally {
@@ -121,8 +123,9 @@ Best regards,
         await api.delete(`/api/templates/${id}`);
         showToast('success', 'Template deleted');
         fetchTemplates();
-      } catch (err: any) {
-        showToast('error', err.response?.data?.error || 'Failed to delete template');
+      } catch (err: unknown) {
+        const apiErr = err as { response?: { data?: { error?: string } } };
+        showToast('error', apiErr.response?.data?.error || 'Failed to delete template');
       }
     }
   };

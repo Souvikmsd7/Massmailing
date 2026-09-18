@@ -7,13 +7,7 @@ import { showToast } from '@/lib/swal';
 import {
   Target,
   Sparkles,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  HelpCircle,
-  ExternalLink,
   RefreshCw,
-  Loader2,
   ChevronRight,
   Filter,
 } from 'lucide-react';
@@ -35,7 +29,9 @@ export default function MatchesPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchMatches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minScore]);
 
   const getScoreBadgeColor = (score: number) => {
@@ -96,7 +92,7 @@ export default function MatchesPage() {
           </div>
           <h3 className="text-base font-bold text-white font-outfit">No match records found</h3>
           <p className="text-slate-400 text-sm mt-1 max-w-md mx-auto">
-            Head to the Job Board and click "Match Me" on any job to calculate your compatibility score.
+            Head to the Job Board and click &ldquo;Match Me&rdquo; on any job to calculate your compatibility score.
           </p>
           <Link href="/career/jobs" className="btn btn-primary btn-sm mt-4 inline-flex items-center gap-2">
             Browse Job Board <ChevronRight size={14} />
