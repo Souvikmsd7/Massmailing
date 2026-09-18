@@ -22,26 +22,18 @@ describe('pgvector Integration Test', () => {
   });
 
   it('calculates pgvector cosine similarity using native <=> operator in PostgreSQL', async () => {
-    let vectorSupported = false;
-    try {
-      const extResult = await prisma.$queryRawUnsafe<Array<{ extname: string }>>(
-        `SELECT extname FROM pg_extension WHERE extname = 'vector'`
-      );
-      vectorSupported = extResult && extResult.length > 0;
-    } catch {
-      vectorSupported = false;
-    }
+    // 1. Verify pgvector extension exists explicitly (fails test if extension unavailable)
+    const extResult = await prisma.$queryRawUnsafe<Array<{ extname: string }>>(
+      `SELECT extname FROM pg_extension WHERE extname = 'vector'`
+    );
+    const vectorSupported = extResult && extResult.length > 0;
+    expect(vectorSupported).toBe(true);
 
-    if (!vectorSupported) {
-      console.warn('[pgvectorIntegration.test] PostgreSQL vector extension not active in test environment');
-      return;
-    }
-
-    // 1 & 2: Create candidate & job embedding records with 768 dimensions
+    // 2. Create candidate & job embedding records with 768-dim unit vector
     const dummyVector = new Array(768).fill(0.1);
     const formattedVec = `[${dummyVector.join(',')}]`;
 
-    // Upsert candidate embedding
+    // Candidate embedding
     const candEmb = await prisma.embedding.upsert({
       where: {
         entityType_entityId: { entityType: 'CANDIDATE', entityId: testCandidateId },
@@ -56,7 +48,7 @@ describe('pgvector Integration Test', () => {
       candEmb.id
     );
 
-    // Upsert job embedding
+    // Job embedding
     const jobEmb = await prisma.embedding.upsert({
       where: {
         entityType_entityId: { entityType: 'JOB', entityId: testJobId },
@@ -71,10 +63,23 @@ describe('pgvector Integration Test', () => {
       jobEmb.id
     );
 
-    // 3. Execute pgvector cosine similarity calculation
+    // 3. Explicitly verify Candidate and Job vector columns are populated (NOT NULL)
+    const candVectorCheck = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
+      `SELECT COUNT(*)::int as count FROM "Embedding" WHERE "id" = $1 AND "vector" IS NOT NULL`,
+      candEmb.id
+    );
+    expect(candVectorCheck[0].count).toBe(1);
+
+    const jobVectorCheck = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
+      `SELECT COUNT(*)::int as count FROM "Embedding" WHERE "id" = $1 AND "vector" IS NOT NULL`,
+      jobEmb.id
+    );
+    expect(jobVectorCheck[0].count).toBe(1);
+
+    // 4. Call calculatePgVectorSimilarity to execute native PostgreSQL <=> query
     const similarity = await calculatePgVectorSimilarity(testCandidateId, testJobId);
 
-    // 4. Verify PostgreSQL <=> operator returned numeric similarity close to 1.0
+    // 5 & 6. Verify returned similarity is numeric and identical vectors produce ~1.0
     expect(similarity).not.toBeNull();
     expect(typeof similarity).toBe('number');
     expect(similarity!).toBeCloseTo(1.0, 2);

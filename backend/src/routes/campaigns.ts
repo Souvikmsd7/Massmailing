@@ -23,6 +23,7 @@ const createCampaignSchema = z.object({
   followUpDays: z.number().int().min(1).max(30).optional().default(3),
   followUpSubject: z.string().optional(),
   followUpBody: z.string().optional(),
+  scheduledAt: z.string().optional(),
   recipients: z
     .array(
       z.object({
@@ -60,8 +61,26 @@ router.post('/', uploadResume, async (req: AuthRequest, res: Response): Promise<
       followUpDays,
       followUpSubject,
       followUpBody,
+      scheduledAt,
       recipients,
     } = parsed.data;
+
+    let targetScheduledAt: Date | undefined;
+    let initialStatus: CampaignStatus = CampaignStatus.DRAFT;
+
+    if (scheduledAt) {
+      const parsedDate = new Date(scheduledAt);
+      if (isNaN(parsedDate.getTime())) {
+        res.status(400).json({ error: 'Invalid scheduledAt date format' });
+        return;
+      }
+      if (parsedDate <= new Date()) {
+        res.status(400).json({ error: 'Scheduled time must be in the future' });
+        return;
+      }
+      targetScheduledAt = parsedDate;
+      initialStatus = CampaignStatus.SCHEDULED;
+    }
 
     const [settings, user] = await Promise.all([
       prisma.settings.findUnique({ where: { userId } }),
@@ -88,6 +107,8 @@ router.post('/', uploadResume, async (req: AuthRequest, res: Response): Promise<
         name,
         subject,
         body: emailBody,
+        status: initialStatus,
+        scheduledAt: targetScheduledAt,
         recipientCount: recipients.length,
         pendingCount: recipients.length,
         batchSize: batchSize || settings?.emailBatchSize || 5,
@@ -147,6 +168,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
           pendingCount: true,
           openedCount: true,
           clickedCount: true,
+          scheduledAt: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -218,6 +240,99 @@ router.post('/:id/start', async (req: AuthRequest, res: Response): Promise<void>
   } catch (err: any) {
     logger.error('[Campaigns] Start error', { userId: req.user?.userId, campaignId: String(req.params.id) }, err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to start campaign' });
+  }
+});
+
+// POST /api/campaigns/:id/schedule
+router.post('/:id/schedule', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.userId;
+    const id = req.params.id as string;
+    const { scheduledAt } = req.body;
+
+    if (!scheduledAt) {
+      res.status(400).json({ error: 'scheduledAt is required' });
+      return;
+    }
+
+    const scheduledDate = new Date(scheduledAt);
+    if (isNaN(scheduledDate.getTime())) {
+      res.status(400).json({ error: 'Invalid scheduledAt date format' });
+      return;
+    }
+
+    if (scheduledDate <= new Date()) {
+      res.status(400).json({ error: 'Scheduled date must be in the future' });
+      return;
+    }
+
+    const [campaign, user] = await Promise.all([
+      prisma.campaign.findFirst({ where: { id, userId } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+    ]);
+
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
+    CampaignStateMachine.validateTransition(campaign.status, CampaignStatus.SCHEDULED, id);
+
+    const userName = user?.name || '';
+    const updated = await prisma.campaign.update({
+      where: { id },
+      data: {
+        status: CampaignStatus.SCHEDULED,
+        scheduledAt: scheduledDate,
+        updatedBy: userName,
+      },
+    });
+
+    sseManager.emit(id, { type: 'scheduled', scheduledAt: scheduledDate.toISOString() });
+    logger.info('Scheduled campaign', { campaignId: id, userId, scheduledAt: scheduledDate });
+
+    res.json({ message: 'Campaign scheduled successfully', campaign: updated });
+  } catch (err: any) {
+    logger.error('[Campaigns] Schedule error', { userId: req.user?.userId, campaignId: String(req.params.id) }, err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to schedule campaign' });
+  }
+});
+
+// POST /api/campaigns/:id/unschedule
+router.post('/:id/unschedule', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.userId;
+    const id = req.params.id as string;
+
+    const [campaign, user] = await Promise.all([
+      prisma.campaign.findFirst({ where: { id, userId } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+    ]);
+
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
+    CampaignStateMachine.validateTransition(campaign.status, CampaignStatus.DRAFT, id);
+
+    const userName = user?.name || '';
+    const updated = await prisma.campaign.update({
+      where: { id },
+      data: {
+        status: CampaignStatus.DRAFT,
+        scheduledAt: null,
+        updatedBy: userName,
+      },
+    });
+
+    sseManager.emit(id, { type: 'unscheduled' });
+    logger.info('Unscheduled campaign (reverted to draft)', { campaignId: id, userId });
+
+    res.json({ message: 'Campaign reverted to draft', campaign: updated });
+  } catch (err: any) {
+    logger.error('[Campaigns] Unschedule error', { userId: req.user?.userId, campaignId: String(req.params.id) }, err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to unschedule campaign' });
   }
 });
 

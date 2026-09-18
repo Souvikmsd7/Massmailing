@@ -4,7 +4,12 @@ import { ConflictError } from '../utils/errors';
 
 describe('Campaign State Machine', () => {
   it('allows valid state transitions', () => {
+    expect(CampaignStateMachine.canTransition(CampaignStatus.DRAFT, CampaignStatus.SCHEDULED)).toBe(true);
     expect(CampaignStateMachine.canTransition(CampaignStatus.DRAFT, CampaignStatus.PROCESSING)).toBe(true);
+    expect(CampaignStateMachine.canTransition(CampaignStatus.SCHEDULED, CampaignStatus.PROCESSING)).toBe(true);
+    expect(CampaignStateMachine.canTransition(CampaignStatus.SCHEDULED, CampaignStatus.CANCELLED)).toBe(true);
+    expect(CampaignStateMachine.canTransition(CampaignStatus.SCHEDULED, CampaignStatus.DRAFT)).toBe(true);
+    expect(CampaignStateMachine.canTransition(CampaignStatus.SCHEDULED, CampaignStatus.SCHEDULED)).toBe(true);
     expect(CampaignStateMachine.canTransition(CampaignStatus.PROCESSING, CampaignStatus.PAUSED)).toBe(true);
     expect(CampaignStateMachine.canTransition(CampaignStatus.PAUSED, CampaignStatus.PROCESSING)).toBe(true);
     expect(CampaignStateMachine.canTransition(CampaignStatus.PROCESSING, CampaignStatus.COMPLETED)).toBe(true);

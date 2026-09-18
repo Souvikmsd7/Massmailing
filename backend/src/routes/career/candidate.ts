@@ -18,6 +18,32 @@ const candidateProfileSchema = z.object({
   noticePeriod: z.string().max(100).optional().nullable(),
   workAuthorization: z.string().max(200).optional().nullable(),
   yearsOfExperience: z.number().min(0).max(60).optional().nullable(),
+  tools: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        name: z.string().max(100),
+        link: z.string().max(1000).optional().nullable(),
+        usedFor: z.string().max(1000).optional().nullable(),
+        includeInProfile: z.boolean().optional(),
+      })
+    )
+    .max(100)
+    .optional()
+    .nullable(),
+  projects: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        name: z.string().max(100),
+        githubUrl: z.string().max(1000).optional().nullable(),
+        notes: z.string().max(2000).optional().nullable(),
+        includeInProfile: z.boolean().optional(),
+      })
+    )
+    .max(100)
+    .optional()
+    .nullable(),
 });
 
 // GET /api/career/profile

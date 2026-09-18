@@ -15,6 +15,8 @@ export interface UpsertCandidateData {
   noticePeriod?: string | null;
   workAuthorization?: string | null;
   yearsOfExperience?: number | null;
+  tools?: any;
+  projects?: any;
 }
 
 /**

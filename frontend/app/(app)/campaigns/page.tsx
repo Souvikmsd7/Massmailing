@@ -5,7 +5,7 @@ import Link from 'next/link';
 import api from '@/lib/api';
 import { Campaign } from '@/lib/types';
 import StatusBadge from '@/components/StatusBadge';
-import { Plus, Search, ArrowRight, Send, ChevronLeft, ChevronRight, Eye, MousePointer } from 'lucide-react';
+import { Plus, Search, ArrowRight, Send, ChevronLeft, ChevronRight, Eye, MousePointer, Clock } from 'lucide-react';
 import { showToast } from '@/lib/swal';
 
 export default function CampaignsPage() {
@@ -113,7 +113,15 @@ export default function CampaignsPage() {
                         <div className="text-xs text-slate-400 mt-0.5 max-w-[280px] truncate font-mono">
                           {c.subject}
                         </div>
-                        {(c.status === 'SENDING' || c.status === 'PAUSED') && (
+                        {c.status === 'SCHEDULED' && c.scheduledAt && (
+                          <div className="mt-1 flex items-center gap-1 text-[11px] text-violet-300 font-medium">
+                            <Clock size={11} className="text-violet-400" />
+                            Scheduled: {new Date(c.scheduledAt).toLocaleString('en-US', {
+                              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </div>
+                        )}
+                        {(c.status === 'SENDING' || c.status === 'PAUSED' || c.status === 'PROCESSING') && (
                           <div className="mt-2 max-w-[200px]">
                             <div className="progress-bar" style={{ height: 4 }}>
                               <div className="progress-fill" style={{ width: `${progress}%` }} />

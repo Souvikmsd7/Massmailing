@@ -17,7 +17,8 @@ import {
   BrainCircuit,
   FileText,
   Star,
-  Briefcase
+  Briefcase,
+  Wrench,
 } from 'lucide-react';
 
 const navItems = [
@@ -36,6 +37,7 @@ const careerNavItems = [
   { href: '/career/resume', label: 'Resume', icon: FileText },
   { href: '/career/profile', label: 'Profile', icon: Star },
   { href: '/career/skills', label: 'Skills', icon: Sparkles },
+  { href: '/career/tools-projects', label: 'Tools & Projects', icon: Wrench },
 ];
 
 export default function Sidebar() {

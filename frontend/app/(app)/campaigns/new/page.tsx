@@ -8,7 +8,7 @@ import { showToast } from '@/lib/swal';
 import {
   Upload, Users, PenSquare, Eye, CheckCircle2, X, Plus, Trash2,
   FileText, AlertCircle, Info, ChevronLeft, ChevronRight, Send,
-  Variable, Paperclip, Download, UserCheck, Search, Sparkles, Clock
+  Variable, Paperclip, Download, UserCheck, Search, Sparkles, Clock, Calendar
 } from 'lucide-react';
 import Papa from 'papaparse';
 
@@ -73,6 +73,11 @@ Best regards,
   const [followUpSubject, setFollowUpSubject] = useState('');
   const [followUpBody, setFollowUpBody] = useState('');
   const resumeRef = useRef<HTMLInputElement>(null);
+
+  // Schedule state
+  const [sendOption, setSendOption] = useState<'now' | 'schedule'>('now');
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('09:00');
 
   // Preview state
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -306,6 +311,29 @@ Best regards,
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
+      let scheduledAtIso: string | undefined;
+
+      if (sendOption === 'schedule') {
+        if (!scheduledDate || !scheduledTime) {
+          showToast('warning', 'Please select a scheduled date and time');
+          setSubmitting(false);
+          return;
+        }
+        const dateTimeStr = `${scheduledDate}T${scheduledTime}`;
+        const targetDate = new Date(dateTimeStr);
+        if (isNaN(targetDate.getTime())) {
+          showToast('error', 'Invalid schedule date or time');
+          setSubmitting(false);
+          return;
+        }
+        if (targetDate <= new Date()) {
+          showToast('error', 'Scheduled time must be in the future');
+          setSubmitting(false);
+          return;
+        }
+        scheduledAtIso = targetDate.toISOString();
+      }
+
       const formData = new FormData();
 
       const data = {
@@ -318,6 +346,7 @@ Best regards,
         followUpDays,
         followUpSubject,
         followUpBody,
+        scheduledAt: scheduledAtIso,
         recipients: contacts,
       };
       formData.append('data', JSON.stringify(data));
@@ -332,10 +361,15 @@ Best regards,
 
       const campaignId = res.data.campaign.id;
 
-      // Start campaign immediately
-      await api.post(`/api/campaigns/${campaignId}/start`);
+      if (sendOption === 'now') {
+        // Start campaign immediately
+        await api.post(`/api/campaigns/${campaignId}/start`);
+        showToast('success', 'Campaign created and started!');
+      } else {
+        const formatted = new Date(scheduledAtIso!).toLocaleString();
+        showToast('success', `Campaign scheduled for ${formatted}`);
+      }
 
-      showToast('success', 'Campaign created and started!');
       router.push(`/campaigns/${campaignId}`);
     } catch (err: any) {
       showToast('error', err?.response?.data?.error || 'Failed to create campaign');
@@ -970,16 +1004,108 @@ Best regards,
               </div>
             </div>
 
+            {/* Delivery Schedule Options */}
+            <div className="p-4 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] mb-6">
+              <h3 className="font-medium text-sm text-slate-200 mb-3 flex items-center gap-2">
+                <Clock size={16} className="text-violet-400" />
+                Delivery Timing Options
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                <div
+                  onClick={() => setSendOption('now')}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
+                    sendOption === 'now'
+                      ? 'bg-violet-950/40 border-violet-500 text-white'
+                      : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  <Send size={18} className={`mt-0.5 ${sendOption === 'now' ? 'text-violet-400' : 'text-slate-500'}`} />
+                  <div>
+                    <p className="font-semibold text-sm text-slate-100">Send Immediately</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Start sending emails to recipients as soon as campaign is created.</p>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => {
+                    setSendOption('schedule');
+                    if (!scheduledDate) {
+                      const tomorrow = new Date();
+                      tomorrow.setDate(tomorrow.getDate() + 1);
+                      setScheduledDate(tomorrow.toISOString().split('T')[0]);
+                    }
+                  }}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
+                    sendOption === 'schedule'
+                      ? 'bg-violet-950/40 border-violet-500 text-white'
+                      : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  <Calendar size={18} className={`mt-0.5 ${sendOption === 'schedule' ? 'text-violet-400' : 'text-slate-500'}`} />
+                  <div>
+                    <p className="font-semibold text-sm text-slate-100">Schedule for Later</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Pick a specific date and time to automatically trigger sending.</p>
+                  </div>
+                </div>
+              </div>
+
+              {sendOption === 'schedule' && (
+                <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="form-group mb-0">
+                      <label className="label text-xs">Scheduled Date *</label>
+                      <input
+                        type="date"
+                        min={new Date().toISOString().split('T')[0]}
+                        value={scheduledDate}
+                        onChange={(e) => setScheduledDate(e.target.value)}
+                        className="input text-xs py-1.5"
+                      />
+                    </div>
+                    <div className="form-group mb-0">
+                      <label className="label text-xs">Scheduled Time *</label>
+                      <input
+                        type="time"
+                        value={scheduledTime}
+                        onChange={(e) => setScheduledTime(e.target.value)}
+                        className="input text-xs py-1.5"
+                      />
+                    </div>
+                  </div>
+                  {scheduledDate && scheduledTime && (
+                    <p className="text-xs text-violet-300 flex items-center gap-1.5 pt-1">
+                      <Clock size={13} />
+                      Will trigger automatically on{' '}
+                      <strong>
+                        {new Date(`${scheduledDate}T${scheduledTime}`).toLocaleString('en-US', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </strong>{' '}
+                      (Local Time)
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Warning box */}
             <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 mb-6">
               <div className="flex gap-3">
                 <AlertCircle size={20} className="text-amber-400 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-amber-400 mb-1">Ready to send {contacts.length} individual emails</p>
+                  <p className="font-semibold text-amber-400 mb-1">
+                    {sendOption === 'schedule'
+                      ? `Ready to schedule ${contacts.length} individual emails`
+                      : `Ready to send ${contacts.length} individual emails`}
+                  </p>
                   <p className="text-sm text-amber-300/80">
                     Each recruiter will receive a <strong>separate, personalized email</strong>.
                     No recruiter will see another's email address.
-                    This action cannot be undone once started.
+                    {sendOption === 'schedule'
+                      ? ' You can modify or cancel the schedule anytime before execution.'
+                      : ' This action cannot be undone once started.'}
                   </p>
                 </div>
               </div>
@@ -993,7 +1119,12 @@ Best regards,
               {submitting ? (
                 <>
                   <span className="spinner" style={{ width: 18, height: 18 }} />
-                  Creating Campaign...
+                  {sendOption === 'schedule' ? 'Scheduling Campaign...' : 'Creating Campaign...'}
+                </>
+              ) : sendOption === 'schedule' ? (
+                <>
+                  <Calendar size={18} />
+                  Schedule Campaign for {contacts.length} Recipients
                 </>
               ) : (
                 <>

@@ -4,7 +4,12 @@ import { logger } from '../utils/logger';
 
 const VALID_TRANSITIONS: Record<CampaignStatus, CampaignStatus[]> = {
   [CampaignStatus.DRAFT]: [CampaignStatus.SCHEDULED, CampaignStatus.PROCESSING],
-  [CampaignStatus.SCHEDULED]: [CampaignStatus.PROCESSING, CampaignStatus.CANCELLED],
+  [CampaignStatus.SCHEDULED]: [
+    CampaignStatus.PROCESSING,
+    CampaignStatus.CANCELLED,
+    CampaignStatus.DRAFT,
+    CampaignStatus.SCHEDULED,
+  ],
   [CampaignStatus.PROCESSING]: [
     CampaignStatus.PAUSED,
     CampaignStatus.COMPLETED,

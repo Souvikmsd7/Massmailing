@@ -161,6 +161,22 @@ describe('POST /api/career/profile', () => {
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
   });
+
+  it('creates profile with tools and projects', async () => {
+    const tools = [{ name: 'Docker', link: 'https://docker.com', usedFor: 'Containerization' }];
+    const projects = [{ name: 'MassMailer', githubUrl: 'https://github.com/user/massmailer', notes: 'Outreach app' }];
+    mockUpsertProfile.mockResolvedValueOnce({ ...PROFILE_A, tools, projects } as any);
+
+    const res = await request(app)
+      .post('/api/career/profile')
+      .set('Authorization', `Bearer ${makeToken(USER_A)}`)
+      .send({ tools, projects });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.tools).toHaveLength(1);
+    expect(res.body.data.projects).toHaveLength(1);
+  });
 });
 
 describe('PATCH /api/career/profile', () => {

@@ -34,6 +34,7 @@ import careerMatchesRoutes from './routes/career/matches';
 import { startWorker } from './workers/emailWorker';
 import { startJobDiscoveryWorker } from './workers/jobDiscoveryWorker';
 import { startJobMatchingWorker } from './workers/jobMatchingWorker';
+import { startCampaignSchedulerWorker } from './workers/campaignSchedulerWorker';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -108,6 +109,7 @@ if (process.env.NODE_ENV !== 'test') {
     startWorker();
     startJobDiscoveryWorker();
     startJobMatchingWorker();
+    startCampaignSchedulerWorker();
   });
 }
 

@@ -63,6 +63,7 @@ model Campaign {
   followUpBody    String?        @db.Text
   attachmentPath  String?
   attachmentName  String?
+  scheduledAt     DateTime?
   createdBy       String         @default("")
   updatedBy       String         @default("")
   createdAt       DateTime       @default(now())
@@ -75,6 +76,7 @@ model Campaign {
   @@index([createdAt])
   @@index([userId, status])
   @@index([status, createdAt])
+  @@index([status, scheduledAt])
 }
 
 model Recipient {
@@ -245,6 +247,8 @@ model CandidateProfile {
   noticePeriod       String?
   workAuthorization  String?
   yearsOfExperience  Float?
+  tools              Json?            @default("[]")
+  projects           Json?            @default("[]")
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   resumes            Resume[]

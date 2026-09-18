@@ -9,7 +9,8 @@ import StatusBadge from '@/components/StatusBadge';
 import { showToast } from '@/lib/swal';
 import {
   ArrowLeft, Download, Play, Pause, Square, RefreshCw,
-  Mail, CheckCircle2, XCircle, Clock, Send, Users, Wifi, Eye
+  Mail, CheckCircle2, XCircle, Clock, Send, Users, Wifi, Eye,
+  Calendar, Edit3, X
 } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -24,6 +25,12 @@ export default function CampaignDetailPage() {
   const [filter, setFilter] = useState<string>('ALL');
   const [liveConnected, setLiveConnected] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
+
+  // Reschedule Modal state
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleTime, setRescheduleTime] = useState('09:00');
+  const [rescheduling, setRescheduling] = useState(false);
 
   const loadCampaign = useCallback(async () => {
     try {
@@ -118,6 +125,13 @@ export default function CampaignDetailPage() {
       if (data.type === 'resumed') {
         setCampaign((prev) => prev ? { ...prev, status: 'PROCESSING' } : prev);
       }
+      if (data.type === 'scheduled') {
+        setCampaign((prev) => prev ? { ...prev, status: 'SCHEDULED', scheduledAt: data.scheduledAt } : prev);
+      }
+      if (data.type === 'scheduled_started') {
+        setCampaign((prev) => prev ? { ...prev, status: 'PROCESSING' } : prev);
+        showToast('info', 'Scheduled campaign is now starting!');
+      }
     };
 
     return () => {
@@ -125,16 +139,45 @@ export default function CampaignDetailPage() {
     };
   }, [id, loadCampaign]);
 
-  const action = async (endpoint: string, successMsg: string) => {
+  const action = async (endpoint: string, successMsg: string, body?: any) => {
     setActionLoading(true);
     try {
-      await api.post(`/api/campaigns/${id}/${endpoint}`);
+      if (body) {
+        await api.post(`/api/campaigns/${id}/${endpoint}`, body);
+      } else {
+        await api.post(`/api/campaigns/${id}/${endpoint}`);
+      }
       showToast('success', successMsg);
       await loadCampaign();
     } catch (err: any) {
       showToast('error', err?.response?.data?.error || 'Action failed');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleRescheduleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rescheduleDate || !rescheduleTime) {
+      showToast('warning', 'Please select date and time');
+      return;
+    }
+    const dateTimeStr = `${rescheduleDate}T${rescheduleTime}`;
+    const targetDate = new Date(dateTimeStr);
+    if (isNaN(targetDate.getTime()) || targetDate <= new Date()) {
+      showToast('error', 'Please select a future date and time');
+      return;
+    }
+    setRescheduling(true);
+    try {
+      await api.post(`/api/campaigns/${id}/schedule`, { scheduledAt: targetDate.toISOString() });
+      showToast('success', `Rescheduled for ${targetDate.toLocaleString()}`);
+      setShowRescheduleModal(false);
+      await loadCampaign();
+    } catch (err: any) {
+      showToast('error', err?.response?.data?.error || 'Failed to reschedule campaign');
+    } finally {
+      setRescheduling(false);
     }
   };
 
@@ -205,10 +248,50 @@ export default function CampaignDetailPage() {
 
           {/* Action Controls strictly mapped to state machine */}
           {campaign.status === 'DRAFT' && (
-            <button onClick={() => action('start', 'Campaign started!')} disabled={actionLoading} className="btn btn-primary">
-              <Play size={16} /> Start Campaign
-            </button>
+            <>
+              <button onClick={() => action('start', 'Campaign started!')} disabled={actionLoading} className="btn btn-primary">
+                <Play size={16} /> Start Campaign Now
+              </button>
+              <button
+                onClick={() => {
+                  const tomorrow = new Date();
+                  tomorrow.setDate(tomorrow.getDate() + 1);
+                  setRescheduleDate(tomorrow.toISOString().split('T')[0]);
+                  setShowRescheduleModal(true);
+                }}
+                className="btn btn-secondary"
+              >
+                <Calendar size={15} /> Schedule
+              </button>
+            </>
           )}
+
+          {campaign.status === 'SCHEDULED' && (
+            <>
+              <button onClick={() => action('start', 'Campaign started!')} disabled={actionLoading} className="btn btn-primary" title="Override schedule and launch now">
+                <Play size={15} /> Send Now
+              </button>
+              <button
+                onClick={() => {
+                  if (campaign.scheduledAt) {
+                    const d = new Date(campaign.scheduledAt);
+                    setRescheduleDate(d.toISOString().split('T')[0]);
+                    const hours = String(d.getHours()).padStart(2, '0');
+                    const mins = String(d.getMinutes()).padStart(2, '0');
+                    setRescheduleTime(`${hours}:${mins}`);
+                  }
+                  setShowRescheduleModal(true);
+                }}
+                className="btn btn-secondary"
+              >
+                <Edit3 size={15} /> Reschedule
+              </button>
+              <button onClick={() => action('unschedule', 'Campaign unscheduled (reverted to draft)')} disabled={actionLoading} className="btn btn-ghost text-amber-400 border border-amber-500/30">
+                Cancel Schedule
+              </button>
+            </>
+          )}
+
           {isActive && (
             <>
               <button onClick={() => action('pause', 'Campaign paused')} disabled={actionLoading} className="btn btn-secondary">
@@ -374,6 +457,92 @@ export default function CampaignDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Reschedule Modal */}
+      {showRescheduleModal && (
+        <div className="modal-overlay">
+          <div className="modal max-w-md w-full p-6">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-[var(--border)]">
+              <h3 className="font-bold text-lg text-slate-100 flex items-center gap-2">
+                <Calendar size={18} className="text-violet-400" />
+                Schedule Campaign
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowRescheduleModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRescheduleSubmit} className="space-y-4">
+              <div className="form-group">
+                <label className="label text-xs">Scheduled Date *</label>
+                <input
+                  type="date"
+                  required
+                  min={new Date().toISOString().split('T')[0]}
+                  value={rescheduleDate}
+                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  className="input text-xs py-1.5"
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="label text-xs">Scheduled Time *</label>
+                <input
+                  type="time"
+                  required
+                  value={rescheduleTime}
+                  onChange={(e) => setRescheduleTime(e.target.value)}
+                  className="input text-xs py-1.5"
+                />
+              </div>
+
+              {rescheduleDate && rescheduleTime && (
+                <p className="text-xs text-violet-300 flex items-center gap-1.5 p-2 rounded bg-violet-950/30 border border-violet-500/20">
+                  <Clock size={13} />
+                  Will trigger on{' '}
+                  <strong>
+                    {new Date(`${rescheduleDate}T${rescheduleTime}`).toLocaleString('en-US', {
+                      dateStyle: 'medium',
+                      timeStyle: 'short',
+                    })}
+                  </strong>
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
+                <button
+                  type="button"
+                  onClick={() => setShowRescheduleModal(false)}
+                  className="btn btn-ghost text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={rescheduling}
+                  className="btn btn-primary text-xs flex items-center gap-1.5"
+                >
+                  {rescheduling ? (
+                    <>
+                      <div className="spinner border-white border-t-transparent w-3.5 h-3.5" />
+                      Saving Schedule...
+                    </>
+                  ) : (
+                    <>
+                      <Calendar size={14} />
+                      Save Schedule
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -24,6 +24,7 @@ export interface Campaign {
   attachmentName?: string;
   createdBy: string;
   updatedBy: string;
+  scheduledAt?: string;
   createdAt: string;
   updatedAt: string;
   recipients?: Recipient[];
@@ -119,6 +120,22 @@ export type ResumeStatus = 'UPLOADED' | 'PROCESSING' | 'PARSED' | 'FAILED';
 export type SkillSource = 'RESUME' | 'MANUAL' | 'AI';
 export type SkillProficiency = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT';
 
+export interface ToolItem {
+  id?: string;
+  name: string;
+  link?: string | null;
+  usedFor?: string | null;
+  includeInProfile?: boolean;
+}
+
+export interface ProjectItem {
+  id?: string;
+  name: string;
+  githubUrl?: string | null;
+  notes?: string | null;
+  includeInProfile?: boolean;
+}
+
 export interface CandidateProfile {
   id: string;
   userId: string;
@@ -133,6 +150,8 @@ export interface CandidateProfile {
   noticePeriod?: string | null;
   workAuthorization?: string | null;
   yearsOfExperience?: number | null;
+  tools?: ToolItem[] | null;
+  projects?: ProjectItem[] | null;
   createdAt: string;
   updatedAt: string;
   skills?: CandidateSkill[];
