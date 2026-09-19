@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { getProfile, updateProfile } from '@/lib/career/candidateApi';
 import { CandidateProfile, ToolItem, ProjectItem } from '@/lib/types';
 import { showToast } from '@/lib/swal';
@@ -15,6 +15,8 @@ import {
   Search,
   Eye,
   EyeOff,
+  List,
+  LayoutGrid
 } from 'lucide-react';
 
 export default function ToolsProjectsPage() {
@@ -26,28 +28,57 @@ export default function ToolsProjectsPage() {
   const [tools, setTools] = useState<ToolItem[]>([]);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
 
-  // UI Filter states
+  // UI Filter & View states
   const [activeTab, setActiveTab] = useState<'tools' | 'projects'>('tools');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSync, setFilterSync] = useState<'all' | 'profile' | 'personal'>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
-  useEffect(() => {
-    getProfile()
-      .then((p) => {
-        if (p) {
-          setProfile(p);
-          setTools(p.tools ?? []);
-          setProjects(p.projects ?? []);
-        }
-      })
-      .catch(() => showToast('error', 'Failed to load records'))
-      .finally(() => setLoading(false));
+  const fetchProfileData = useCallback(async () => {
+    try {
+      const p = await getProfile();
+      if (p) {
+        setProfile(p);
+        setTools(p.tools ?? []);
+        setProjects(p.projects ?? []);
+      }
+    } catch {
+      showToast('error', 'Failed to load records');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleSave = async () => {
+  useEffect(() => {
+    fetchProfileData();
+  }, [fetchProfileData]);
+
+  // Helper to persist changes immediately to server
+  const saveToServer = async (updatedTools: ToolItem[], updatedProjects: ProjectItem[]) => {
     setSaving(true);
     try {
-      // Clean up empty entries before saving
+      const validTools = updatedTools.filter((t) => t.name.trim() !== '');
+      const validProjects = updatedProjects.filter((p) => p.name.trim() !== '');
+
+      const updated = await updateProfile({
+        ...profile,
+        tools: validTools,
+        projects: validProjects,
+      });
+
+      setProfile(updated);
+      setTools(updated.tools ?? []);
+      setProjects(updated.projects ?? []);
+    } catch {
+      showToast('error', 'Failed to update server records');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleManualSave = async () => {
+    setSaving(true);
+    try {
       const validTools = tools.filter((t) => t.name.trim() !== '');
       const validProjects = projects.filter((p) => p.name.trim() !== '');
 
@@ -60,7 +91,7 @@ export default function ToolsProjectsPage() {
       setProfile(updated);
       setTools(updated.tools ?? []);
       setProjects(updated.projects ?? []);
-      showToast('success', 'Tools & Projects saved successfully!');
+      showToast('success', 'Changes saved successfully!');
     } catch {
       showToast('error', 'Failed to save changes');
     } finally {
@@ -68,7 +99,7 @@ export default function ToolsProjectsPage() {
     }
   };
 
-  // Tool Handlers (CRUD)
+  // Tool Handlers (CRUD with immediate save on delete)
   const addTool = () => {
     const newItem: ToolItem = {
       id: 'tool-' + Date.now(),
@@ -84,11 +115,14 @@ export default function ToolsProjectsPage() {
     setTools((prev) => prev.map((t, i) => (i === index ? { ...t, [field]: value } : t)));
   };
 
-  const deleteTool = (index: number) => {
-    setTools((prev) => prev.filter((_, i) => i !== index));
+  const deleteTool = async (indexToDelete: number) => {
+    const updatedTools = tools.filter((_, i) => i !== indexToDelete);
+    setTools(updatedTools);
+    await saveToServer(updatedTools, projects);
+    showToast('success', 'Tool deleted successfully');
   };
 
-  // Project Handlers (CRUD)
+  // Project Handlers (CRUD with immediate save on delete)
   const addProject = () => {
     const newItem: ProjectItem = {
       id: 'proj-' + Date.now(),
@@ -104,8 +138,11 @@ export default function ToolsProjectsPage() {
     setProjects((prev) => prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)));
   };
 
-  const deleteProject = (index: number) => {
-    setProjects((prev) => prev.filter((_, i) => i !== index));
+  const deleteProject = async (indexToDelete: number) => {
+    const updatedProjects = projects.filter((_, i) => i !== indexToDelete);
+    setProjects(updatedProjects);
+    await saveToServer(tools, updatedProjects);
+    showToast('success', 'Project deleted successfully');
   };
 
   // Filtered lists
@@ -150,7 +187,7 @@ export default function ToolsProjectsPage() {
   }
 
   return (
-    <div className="space-y-8 max-w-4xl">
+    <div className="space-y-6 max-w-5xl">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -159,17 +196,17 @@ export default function ToolsProjectsPage() {
             <span className="badge badge-violet text-[10px] px-2 py-0.5 font-bold uppercase">Personal Records</span>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Maintain your software tools, documentation links, and project repositories. Toggle items anytime to include them in your Candidature Profile.
+            Store software tools, links, repos, and notes in list view. Toggle items to display on your Candidature Profile.
           </p>
         </div>
 
         <button
-          onClick={handleSave}
+          onClick={handleManualSave}
           disabled={saving}
           className="btn btn-primary flex items-center gap-2 self-start md:self-auto"
         >
           {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-          {saving ? 'Saving…' : 'Save Changes'}
+          {saving ? 'Saving…' : 'Save All Changes'}
         </button>
       </div>
 
@@ -192,10 +229,10 @@ export default function ToolsProjectsPage() {
         </div>
 
         <div className="card p-3.5 bg-slate-900/50 border-slate-800">
-          <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Profile Items</p>
+          <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Profile Synced</p>
           <div className="flex items-baseline gap-2 mt-1">
             <span className="text-xl font-extrabold text-indigo-400">{toolsInProfileCount + projectsInProfileCount}</span>
-            <span className="text-xs text-slate-400 font-medium">Synced</span>
+            <span className="text-xs text-slate-400 font-medium">Items</span>
           </div>
         </div>
 
@@ -210,7 +247,7 @@ export default function ToolsProjectsPage() {
         </div>
       </div>
 
-      {/* Controls Bar: Navigation Tabs & Search/Filter */}
+      {/* Navigation Tabs & Controls Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
         {/* Tabs */}
         <div className="flex items-center gap-2 bg-slate-900/80 p-1 rounded-xl border border-slate-800">
@@ -222,7 +259,7 @@ export default function ToolsProjectsPage() {
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Wrench size={14} /> Tools & Technologies ({tools.length})
+            <Wrench size={14} /> Tools ({tools.length})
           </button>
           <button
             onClick={() => setActiveTab('projects')}
@@ -232,13 +269,31 @@ export default function ToolsProjectsPage() {
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <FolderGit2 size={14} /> Projects & Repos ({projects.length})
+            <FolderGit2 size={14} /> Projects ({projects.length})
           </button>
         </div>
 
-        {/* Search & Filter */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 sm:w-56">
+        {/* View Mode, Search & Action */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* View Toggle */}
+          <div className="flex items-center bg-slate-900/80 p-1 rounded-lg border border-slate-800">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-1 rounded ${viewMode === 'list' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+              title="List View"
+            >
+              <List size={15} />
+            </button>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1 rounded ${viewMode === 'grid' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+              title="Card View"
+            >
+              <LayoutGrid size={15} />
+            </button>
+          </div>
+
+          <div className="relative flex-1 sm:w-48">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input
               type="text"
@@ -271,27 +326,129 @@ export default function ToolsProjectsPage() {
 
       {/* Main Content Area */}
       {activeTab === 'tools' ? (
-        /* TOOLS MANAGEMENT SECTION */
-        <div className="space-y-4">
+        /* TOOLS SECTION */
+        <div>
           {filteredTools.length === 0 ? (
             <div className="card p-8 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center mx-auto text-pink-400">
                 <Wrench size={22} />
               </div>
-              <h3 className="font-bold text-slate-200 text-sm font-outfit">No tools found</h3>
+              <h3 className="font-bold text-slate-200 text-sm font-outfit">No tools listed</h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
                 {searchQuery || filterSync !== 'all'
-                  ? 'No saved tools match your search or filter settings.'
-                  : 'Start adding tools, software, and developer utilities you use to keep track of links and notes.'}
+                  ? 'No saved tools match your filter.'
+                  : 'Add software tools and developer frameworks to your record.'}
               </p>
               <button onClick={addTool} className="btn btn-secondary text-xs inline-flex items-center gap-1.5">
                 <Plus size={14} /> Add First Tool
               </button>
             </div>
+          ) : viewMode === 'list' ? (
+            /* LIST VIEW FOR TOOLS */
+            <div className="card p-0 overflow-hidden border border-slate-800">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800 text-[10px]">
+                    <tr>
+                      <th className="py-3 px-4 w-1/4">Tool Name</th>
+                      <th className="py-3 px-4 w-1/4">Documentation / Link</th>
+                      <th className="py-3 px-4 w-1/3">Used For / Description</th>
+                      <th className="py-3 px-4 text-center">Profile Sync</th>
+                      <th className="py-3 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 bg-slate-950/40">
+                    {filteredTools.map((tool) => {
+                      const realIndex = tools.findIndex((t) => (t.id && t.id === tool.id) || t === tool);
+                      const isSynced = tool.includeInProfile ?? false;
+
+                      return (
+                        <tr key={tool.id || realIndex} className="hover:bg-slate-900/50 transition-colors group">
+                          {/* Name */}
+                          <td className="py-2.5 px-4">
+                            <input
+                              type="text"
+                              value={tool.name}
+                              onChange={(e) => updateTool(realIndex, 'name', e.target.value)}
+                              placeholder="e.g. Docker, PostgreSQL"
+                              className="input w-full text-xs font-semibold py-1"
+                            />
+                          </td>
+
+                          {/* Link */}
+                          <td className="py-2.5 px-4">
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="url"
+                                value={tool.link ?? ''}
+                                onChange={(e) => updateTool(realIndex, 'link', e.target.value)}
+                                placeholder="https://..."
+                                className="input w-full text-xs py-1"
+                              />
+                              {tool.link && (
+                                <a
+                                  href={tool.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-slate-400 hover:text-pink-400 p-1.5 rounded bg-slate-800/80 hover:bg-slate-800 transition-colors flex-shrink-0"
+                                  title="Open Link"
+                                >
+                                  <ExternalLink size={13} />
+                                </a>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Used For */}
+                          <td className="py-2.5 px-4">
+                            <input
+                              type="text"
+                              value={tool.usedFor ?? ''}
+                              onChange={(e) => updateTool(realIndex, 'usedFor', e.target.value)}
+                              placeholder="Usage notes..."
+                              className="input w-full text-xs py-1"
+                            />
+                          </td>
+
+                          {/* Profile Toggle */}
+                          <td className="py-2.5 px-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => updateTool(realIndex, 'includeInProfile', !isSynced)}
+                              className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                                isSynced
+                                  ? 'bg-pink-500/20 text-pink-300 border-pink-500/40 hover:bg-pink-500/30'
+                                  : 'bg-slate-800/60 text-slate-400 border-slate-700/60 hover:text-slate-200'
+                              }`}
+                              title="Toggle Profile Sync"
+                            >
+                              {isSynced ? <Eye size={12} className="text-pink-400" /> : <EyeOff size={12} />}
+                              <span>{isSynced ? 'Synced' : 'Personal'}</span>
+                            </button>
+                          </td>
+
+                          {/* Delete Action */}
+                          <td className="py-2.5 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => deleteTool(realIndex)}
+                              className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-colors"
+                              title="Delete Tool"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4">
+            /* GRID VIEW FOR TOOLS */
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredTools.map((tool) => {
-                // Find actual index in state array
                 const realIndex = tools.findIndex((t) => (t.id && t.id === tool.id) || t === tool);
                 const isSynced = tool.includeInProfile ?? false;
 
@@ -303,83 +460,65 @@ export default function ToolsProjectsPage() {
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      {/* Left: Input fields */}
-                      <div className="flex-1 space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
-                              Tool / Framework Name
-                            </label>
+                      <div className="flex-1 space-y-2">
+                        <div>
+                          <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">Tool Name</label>
+                          <input
+                            type="text"
+                            value={tool.name}
+                            onChange={(e) => updateTool(realIndex, 'name', e.target.value)}
+                            placeholder="e.g. Docker"
+                            className="input w-full text-sm font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">URL / Link</label>
+                          <div className="flex items-center gap-1.5">
                             <input
-                              type="text"
-                              value={tool.name}
-                              onChange={(e) => updateTool(realIndex, 'name', e.target.value)}
-                              placeholder="e.g. Docker, PostgreSQL, React, Postman"
-                              className="input w-full text-sm font-semibold"
+                              type="url"
+                              value={tool.link ?? ''}
+                              onChange={(e) => updateTool(realIndex, 'link', e.target.value)}
+                              placeholder="https://..."
+                              className="input w-full text-xs"
                             />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
-                              Documentation / Tool Link
-                            </label>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="url"
-                                value={tool.link ?? ''}
-                                onChange={(e) => updateTool(realIndex, 'link', e.target.value)}
-                                placeholder="e.g. https://docker.com"
-                                className="input w-full text-sm"
-                              />
-                              {tool.link && (
-                                <a
-                                  href={tool.link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-slate-400 hover:text-pink-400 p-2 rounded-lg bg-slate-800/80 hover:bg-slate-800 transition-colors"
-                                  title="Open Tool Link"
-                                >
-                                  <ExternalLink size={14} />
-                                </a>
-                              )}
-                            </div>
+                            {tool.link && (
+                              <a
+                                href={tool.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-slate-400 hover:text-pink-400 p-1.5 bg-slate-800 rounded"
+                              >
+                                <ExternalLink size={13} />
+                              </a>
+                            )}
                           </div>
                         </div>
-
                         <div>
-                          <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
-                            Used For / Purpose Notes
-                          </label>
+                          <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">Used For</label>
                           <input
                             type="text"
                             value={tool.usedFor ?? ''}
                             onChange={(e) => updateTool(realIndex, 'usedFor', e.target.value)}
-                            placeholder="e.g. Container orchestration, local database setup, API testing..."
-                            className="input w-full text-sm"
+                            placeholder="Usage details..."
+                            className="input w-full text-xs"
                           />
                         </div>
                       </div>
-
-                      {/* Right Actions & Sync Toggle */}
-                      <div className="flex flex-col items-end gap-2.5 min-w-[130px]">
+                      <div className="flex flex-col items-end gap-2">
                         <button
                           type="button"
                           onClick={() => updateTool(realIndex, 'includeInProfile', !isSynced)}
-                          className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                            isSynced
-                              ? 'bg-pink-500/20 text-pink-300 border-pink-500/40 hover:bg-pink-500/30'
-                              : 'bg-slate-800/60 text-slate-400 border-slate-700/60 hover:text-slate-200'
+                          className={`text-xs px-2.5 py-1 rounded-full border flex items-center gap-1 ${
+                            isSynced ? 'bg-pink-500/20 text-pink-300 border-pink-500/40' : 'bg-slate-800 text-slate-400 border-slate-700'
                           }`}
-                          title="Toggle visibility on Candidature Profile"
                         >
-                          {isSynced ? <Eye size={12} className="text-pink-400" /> : <EyeOff size={12} />}
-                          <span>{isSynced ? 'In Profile' : 'Personal'}</span>
+                          {isSynced ? <Eye size={12} /> : <EyeOff size={12} />}
+                          {isSynced ? 'Synced' : 'Personal'}
                         </button>
-
                         <button
                           type="button"
                           onClick={() => deleteTool(realIndex)}
-                          className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-colors"
-                          title="Delete Tool"
+                          className="text-slate-500 hover:text-rose-400 p-1.5"
                         >
                           <Trash2 size={15} />
                         </button>
@@ -392,25 +531,128 @@ export default function ToolsProjectsPage() {
           )}
         </div>
       ) : (
-        /* PROJECTS MANAGEMENT SECTION */
-        <div className="space-y-4">
+        /* PROJECTS SECTION */
+        <div>
           {filteredProjects.length === 0 ? (
             <div className="card p-8 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto text-blue-400">
                 <FolderGit2 size={22} />
               </div>
-              <h3 className="font-bold text-slate-200 text-sm font-outfit">No projects found</h3>
+              <h3 className="font-bold text-slate-200 text-sm font-outfit">No projects listed</h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
                 {searchQuery || filterSync !== 'all'
-                  ? 'No saved projects match your search or filter settings.'
-                  : 'Start adding your repository links, side projects, and codebase notes for quick personal access.'}
+                  ? 'No saved projects match your filter.'
+                  : 'Add your GitHub repositories and side projects for easy personal access.'}
               </p>
               <button onClick={addProject} className="btn btn-secondary text-xs inline-flex items-center gap-1.5">
                 <Plus size={14} /> Add First Project
               </button>
             </div>
+          ) : viewMode === 'list' ? (
+            /* LIST VIEW FOR PROJECTS */
+            <div className="card p-0 overflow-hidden border border-slate-800">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800 text-[10px]">
+                    <tr>
+                      <th className="py-3 px-4 w-1/4">Project Name</th>
+                      <th className="py-3 px-4 w-1/4">GitHub / Repo Link</th>
+                      <th className="py-3 px-4 w-1/3">Notes & Tech Details</th>
+                      <th className="py-3 px-4 text-center">Profile Sync</th>
+                      <th className="py-3 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 bg-slate-950/40">
+                    {filteredProjects.map((project) => {
+                      const realIndex = projects.findIndex((p) => (p.id && p.id === project.id) || p === project);
+                      const isSynced = project.includeInProfile ?? false;
+
+                      return (
+                        <tr key={project.id || realIndex} className="hover:bg-slate-900/50 transition-colors group">
+                          {/* Name */}
+                          <td className="py-2.5 px-4">
+                            <input
+                              type="text"
+                              value={project.name}
+                              onChange={(e) => updateProject(realIndex, 'name', e.target.value)}
+                              placeholder="e.g. MassMailer Engine"
+                              className="input w-full text-xs font-semibold py-1"
+                            />
+                          </td>
+
+                          {/* GitHub Link */}
+                          <td className="py-2.5 px-4">
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="url"
+                                value={project.githubUrl ?? ''}
+                                onChange={(e) => updateProject(realIndex, 'githubUrl', e.target.value)}
+                                placeholder="https://github.com/..."
+                                className="input w-full text-xs py-1"
+                              />
+                              {project.githubUrl && (
+                                <a
+                                  href={project.githubUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-slate-400 hover:text-blue-400 p-1.5 rounded bg-slate-800/80 hover:bg-slate-800 transition-colors flex-shrink-0"
+                                  title="Open Repository"
+                                >
+                                  <ExternalLink size={13} />
+                                </a>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Notes */}
+                          <td className="py-2.5 px-4">
+                            <input
+                              type="text"
+                              value={project.notes ?? ''}
+                              onChange={(e) => updateProject(realIndex, 'notes', e.target.value)}
+                              placeholder="Architecture notes, stack details..."
+                              className="input w-full text-xs py-1"
+                            />
+                          </td>
+
+                          {/* Profile Toggle */}
+                          <td className="py-2.5 px-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => updateProject(realIndex, 'includeInProfile', !isSynced)}
+                              className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                                isSynced
+                                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 hover:bg-blue-500/30'
+                                  : 'bg-slate-800/60 text-slate-400 border-slate-700/60 hover:text-slate-200'
+                              }`}
+                              title="Toggle Profile Sync"
+                            >
+                              {isSynced ? <Eye size={12} className="text-blue-400" /> : <EyeOff size={12} />}
+                              <span>{isSynced ? 'Synced' : 'Personal'}</span>
+                            </button>
+                          </td>
+
+                          {/* Delete Action */}
+                          <td className="py-2.5 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => deleteProject(realIndex)}
+                              className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-colors"
+                              title="Delete Project"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4">
+            /* GRID VIEW FOR PROJECTS */
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredProjects.map((project) => {
                 const realIndex = projects.findIndex((p) => (p.id && p.id === project.id) || p === project);
                 const isSynced = project.includeInProfile ?? false;
@@ -423,83 +665,65 @@ export default function ToolsProjectsPage() {
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      {/* Left: Input fields */}
-                      <div className="flex-1 space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
-                              Project Name
-                            </label>
+                      <div className="flex-1 space-y-2">
+                        <div>
+                          <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">Project Name</label>
+                          <input
+                            type="text"
+                            value={project.name}
+                            onChange={(e) => updateProject(realIndex, 'name', e.target.value)}
+                            placeholder="e.g. MassMailer Engine"
+                            className="input w-full text-sm font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">Repo URL</label>
+                          <div className="flex items-center gap-1.5">
                             <input
-                              type="text"
-                              value={project.name}
-                              onChange={(e) => updateProject(realIndex, 'name', e.target.value)}
-                              placeholder="e.g. Mass Mailing Engine"
-                              className="input w-full text-sm font-semibold"
+                              type="url"
+                              value={project.githubUrl ?? ''}
+                              onChange={(e) => updateProject(realIndex, 'githubUrl', e.target.value)}
+                              placeholder="https://github.com/..."
+                              className="input w-full text-xs"
                             />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
-                              GitHub / Repo URL
-                            </label>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="url"
-                                value={project.githubUrl ?? ''}
-                                onChange={(e) => updateProject(realIndex, 'githubUrl', e.target.value)}
-                                placeholder="e.g. https://github.com/user/massmailer"
-                                className="input w-full text-sm"
-                              />
-                              {project.githubUrl && (
-                                <a
-                                  href={project.githubUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-slate-400 hover:text-blue-400 p-2 rounded-lg bg-slate-800/80 hover:bg-slate-800 transition-colors"
-                                  title="Open Repository"
-                                >
-                                  <ExternalLink size={14} />
-                                </a>
-                              )}
-                            </div>
+                            {project.githubUrl && (
+                              <a
+                                href={project.githubUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-slate-400 hover:text-blue-400 p-1.5 bg-slate-800 rounded"
+                              >
+                                <ExternalLink size={13} />
+                              </a>
+                            )}
                           </div>
                         </div>
-
                         <div>
-                          <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
-                            Implementation Notes & Tech Details
-                          </label>
-                          <textarea
+                          <label className="block text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">Notes</label>
+                          <input
+                            type="text"
                             value={project.notes ?? ''}
                             onChange={(e) => updateProject(realIndex, 'notes', e.target.value)}
-                            rows={2}
-                            placeholder="Key features, system architecture notes, or stack details..."
-                            className="input w-full text-sm resize-none"
+                            placeholder="Project notes..."
+                            className="input w-full text-xs"
                           />
                         </div>
                       </div>
-
-                      {/* Right Actions & Sync Toggle */}
-                      <div className="flex flex-col items-end gap-2.5 min-w-[130px]">
+                      <div className="flex flex-col items-end gap-2">
                         <button
                           type="button"
                           onClick={() => updateProject(realIndex, 'includeInProfile', !isSynced)}
-                          className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                            isSynced
-                              ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 hover:bg-blue-500/30'
-                              : 'bg-slate-800/60 text-slate-400 border-slate-700/60 hover:text-slate-200'
+                          className={`text-xs px-2.5 py-1 rounded-full border flex items-center gap-1 ${
+                            isSynced ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' : 'bg-slate-800 text-slate-400 border-slate-700'
                           }`}
-                          title="Toggle visibility on Candidature Profile"
                         >
-                          {isSynced ? <Eye size={12} className="text-blue-400" /> : <EyeOff size={12} />}
-                          <span>{isSynced ? 'In Profile' : 'Personal'}</span>
+                          {isSynced ? <Eye size={12} /> : <EyeOff size={12} />}
+                          {isSynced ? 'Synced' : 'Personal'}
                         </button>
-
                         <button
                           type="button"
                           onClick={() => deleteProject(realIndex)}
-                          className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-colors"
-                          title="Delete Project"
+                          className="text-slate-500 hover:text-rose-400 p-1.5"
                         >
                           <Trash2 size={15} />
                         </button>
@@ -516,12 +740,12 @@ export default function ToolsProjectsPage() {
       {/* Footer Save Button */}
       <div className="flex justify-end pt-4 border-t border-slate-800">
         <button
-          onClick={handleSave}
+          onClick={handleManualSave}
           disabled={saving}
           className="btn btn-primary flex items-center gap-2"
         >
           {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-          {saving ? 'Saving…' : 'Save Changes'}
+          {saving ? 'Saving…' : 'Save All Changes'}
         </button>
       </div>
     </div>

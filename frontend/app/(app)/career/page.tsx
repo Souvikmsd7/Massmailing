@@ -85,7 +85,7 @@ export default function CareerDashboard() {
       </div>
 
       {/* Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Resume Card */}
         <div className="card group hover:border-violet-500/30 transition-colors">
           <div className="flex items-center gap-3 mb-4">
@@ -178,16 +178,38 @@ export default function CareerDashboard() {
             </div>
           )}
         </div>
+
+        {/* Tools & Projects Card */}
+        <div className="card group hover:border-pink-500/30 transition-colors">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center">
+              <Sparkles size={18} className="text-pink-400" />
+            </div>
+            <div className="flex-1 flex items-center justify-between">
+              <h3 className="font-bold text-slate-200 font-outfit">Tools & Repos</h3>
+              <span className="text-xs text-pink-400 font-semibold">
+                {(profile?.tools?.length ?? 0) + (profile?.projects?.length ?? 0)} saved
+              </span>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400 mb-2">Maintain software tools, links & project repositories.</p>
+            <Link href="/career/tools-projects" className="block text-xs text-pink-400 hover:text-pink-300 font-semibold transition-colors">
+              Open Workspace →
+            </Link>
+          </div>
+        </div>
       </div>
 
       {/* Quick Actions */}
       <div className="card">
         <h2 className="font-bold text-lg text-slate-100 mb-4 font-outfit">Quick Actions</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { href: '/career/resume', icon: Upload, label: 'Upload / Manage Resume', desc: 'Upload PDF and trigger AI parsing' },
-            { href: '/career/profile', icon: User, label: 'Edit Profile', desc: 'Update headline, summary, preferences' },
-            { href: '/career/skills', icon: BrainCircuit, label: 'Manage Skills', desc: 'View, add, or remove skills' },
+            { href: '/career/resume', icon: Upload, label: 'Upload Resume', desc: 'PDF AI parsing' },
+            { href: '/career/profile', icon: User, label: 'Edit Profile', desc: 'Update candidate profile' },
+            { href: '/career/skills', icon: BrainCircuit, label: 'Manage Skills', desc: 'Skill tags & experience' },
+            { href: '/career/tools-projects', icon: Sparkles, label: 'Tools & Projects', desc: 'Personal records & repos' },
           ].map(({ href, icon: Icon, label, desc }) => (
             <Link
               key={href}
